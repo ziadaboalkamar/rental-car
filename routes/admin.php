@@ -1,0 +1,127 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Admin\CarsController;
+use App\Http\Controllers\Admin\ReservationsController;
+use App\Http\Controllers\Admin\ClientsController;
+use App\Http\Controllers\Admin\PaymentsController;
+use App\Http\Controllers\Admin\ReportsController;
+use App\Http\Controllers\Admin\SupportController;
+use App\Http\Controllers\Admin\BranchesController;
+use App\Http\Controllers\Admin\EmployeesController;
+use App\Http\Controllers\Admin\RolesController;
+use App\Http\Controllers\Admin\StripeConnectController;
+use App\Http\Controllers\Admin\PaymentProvidersController;
+use App\Http\Controllers\Admin\WebsiteSettingsController;
+use App\Http\Controllers\Admin\ContractsController;
+
+Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription'])
+    ->prefix('admin')
+    ->as('admin.')
+    ->group(function () {
+        // Redirect '/admin' to '/admin/cars' with a named route we can reference
+        Route::redirect('/', '/admin/cars')->name('home');
+
+        // Cars
+        Route::resource('cars', CarsController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-manage-cars');
+
+        // Reservations
+        Route::resource('reservations', ReservationsController::class)
+            ->only(['index', 'show', 'edit', 'update'])
+            ->middleware('permission:tenant-manage-reservations');
+        Route::get('reservations/{reservation}/print', [ReservationsController::class, 'print'])
+            ->middleware('permission:tenant-manage-reservations')
+            ->name('reservations.print');
+
+        // Contracts
+        Route::post('contracts/extract', [ContractsController::class, 'extract'])
+            ->middleware('permission:tenant-manage-reservations')
+            ->name('contracts.extract');
+        Route::resource('contracts', ContractsController::class)
+            ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
+            ->middleware('permission:tenant-manage-reservations');
+
+        // Clients
+        Route::resource('clients', ClientsController::class)
+            ->only(['index', 'show'])
+            ->middleware('permission:tenant-manage-clients');
+        Route::patch('clients/{client}/suspend', [ClientsController::class, 'suspend'])
+            ->middleware('permission:tenant-manage-clients')
+            ->name('clients.suspend');
+        Route::patch('clients/{client}/activate', [ClientsController::class, 'activate'])
+            ->middleware('permission:tenant-manage-clients')
+            ->name('clients.activate');
+
+        // Payments
+        Route::resource('payments', PaymentsController::class)
+            ->only(['index'])
+            ->middleware('permission:tenant-manage-payments');
+
+        // Reports
+        Route::resource('reports', ReportsController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-view-reports');
+
+        // Support
+        Route::resource('support', SupportController::class)
+            ->only(['index'])
+            ->middleware('permission:tenant-manage-support');
+        Route::get('/support/tickets/{ticket}', [SupportController::class, 'show'])
+        ->middleware('permission:tenant-manage-support')
+        ->name('support.show');
+        Route::post('/support/tickets/{ticket}/reply', [SupportController::class, 'reply'])
+        ->middleware('permission:tenant-manage-support')
+        ->name('support.reply');
+        Route::post('/support/tickets/{ticket}/close', [SupportController::class, 'close'])
+        ->middleware('permission:tenant-manage-support')
+        ->name('support.close');
+
+        // Branches
+        Route::resource('branches', BranchesController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-manage-branches');
+
+        // Employees
+        Route::resource('employees', EmployeesController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-manage-employees');
+
+        // Roles
+        Route::resource('roles', RolesController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-manage-employees');
+
+        // Tenant payment gateway (Stripe Connect)
+        Route::get('settings/payment-providers', [PaymentProvidersController::class, 'edit'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.payment-providers.edit');
+        Route::put('settings/payment-providers', [PaymentProvidersController::class, 'update'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.payment-providers.update');
+
+        Route::get('settings/website', [WebsiteSettingsController::class, 'edit'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.website.edit');
+        Route::put('settings/website', [WebsiteSettingsController::class, 'update'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.website.update');
+
+        Route::get('settings/stripe-connect', [StripeConnectController::class, 'edit'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.stripe-connect.edit');
+        Route::post('settings/stripe-connect/connect', [StripeConnectController::class, 'connect'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.stripe-connect.connect');
+        Route::get('settings/stripe-connect/refresh', [StripeConnectController::class, 'refresh'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.stripe-connect.refresh');
+        Route::get('settings/stripe-connect/return', [StripeConnectController::class, 'returned'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.stripe-connect.return');
+        Route::post('settings/stripe-connect/login-link', [StripeConnectController::class, 'loginLink'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.stripe-connect.login-link');
+
+    });

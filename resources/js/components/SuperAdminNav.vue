@@ -1,0 +1,183 @@
+<script setup lang="ts">
+import {
+    SidebarGroup,
+    SidebarGroupLabel,
+    SidebarMenu,
+    SidebarMenuButton,
+    SidebarMenuItem,
+    SidebarMenuSub,
+    SidebarMenuSubButton,
+    SidebarMenuSubItem,
+} from '@/components/ui/sidebar';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useTrans } from '@/composables/useTrans';
+import { urlIsActive } from '@/lib/utils';
+import { Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
+import {
+    DollarSign,
+    Users,
+    Package,
+    Settings,
+    ChevronDown,
+    LayoutDashboard,
+    CreditCard,
+    Receipt,
+    UserCircle,
+    Shield,
+    Tag,
+    Percent,
+    CarFront,
+    CalendarDays,
+    Cog,
+} from 'lucide-vue-next';
+
+import { type NavItem } from '@/types';
+
+const page = usePage();
+const { t } = useTrans();
+
+const superAdminNav = computed<NavItem[]>(() => [
+    {
+        title: t('dashboard.sidebar.super_admin.dashboard'),
+        href: '/superadmin',
+        icon: LayoutDashboard,
+        permission: 'view-dashboard',
+    },
+    {
+        title: t('dashboard.sidebar.super_admin.revenue'),
+        icon: DollarSign,
+        permission: 'manage-revenue',
+        children: [
+            { title: t('dashboard.sidebar.super_admin.subscription'), href: '/superadmin/revenue/subscription', icon: CreditCard },
+            { title: t('dashboard.sidebar.super_admin.transactions'), href: '/superadmin/revenue/transactions', icon: Receipt },
+        ],
+    },
+    {
+        title: t('dashboard.sidebar.super_admin.user_management'),
+        icon: Users,
+        children: [
+            { title: t('dashboard.sidebar.super_admin.users'), href: '/superadmin/users', icon: UserCircle, permission: 'manage-users' },
+            { title: t('dashboard.sidebar.super_admin.roles'), href: '/superadmin/roles', icon: Shield, permission: 'manage-roles' },
+            { title: t('dashboard.sidebar.super_admin.tenants'), href: '/superadmin/tenants', icon: Users, permission: 'manage-tenants' },
+        ].filter(item => !item.permission || page.props.auth.permissions.includes(item.permission)),
+    },
+    {
+        title: t('dashboard.sidebar.super_admin.product_management'),
+        icon: Package,
+        permission: 'manage-settings',
+        children: [
+            { title: t('dashboard.sidebar.super_admin.plans'), href: '/superadmin/plans', icon: Tag },
+            { title: t('dashboard.sidebar.super_admin.discounts'), href: '/superadmin/discounts', icon: Percent },
+        ],
+    },
+    {
+        title: t('dashboard.sidebar.super_admin.cars'),
+        href: '/superadmin/cars',
+        icon: CarFront,
+        description: t('dashboard.sidebar.super_admin.cars_description'),
+        permission: 'manage-cars',
+    },
+    {
+        title: t('dashboard.sidebar.super_admin.reservations'),
+        href: '/superadmin/reservations',
+        icon: CalendarDays,
+        permission: 'manage-reservations',
+    },
+    {
+        title: t('dashboard.sidebar.super_admin.settings'),
+        icon: Settings,
+        permission: 'manage-settings',
+        children: [
+            { title: t('dashboard.sidebar.super_admin.general_settings'), href: '/superadmin/settings/general', icon: Cog },
+            { title: 'Payment Providers', href: '/superadmin/settings/payment-providers', icon: CreditCard },
+        ],
+    },
+]);
+
+const filteredNav = computed(() => {
+    return superAdminNav.value.map(item => {
+        const newItem = { ...item };
+        
+        // Filter children based on permissions
+        if (newItem.children) {
+            newItem.children = newItem.children.filter(child => {
+                return !child.permission || page.props.auth.permissions.includes(child.permission);
+            });
+        }
+        
+        return newItem;
+    }).filter(item => {
+        // If parent has a permission, check it
+        if (item.permission && !page.props.auth.permissions.includes(item.permission)) {
+            return false;
+        }
+        
+        // If it was a group with children but they are all gone, hide the parent
+        if (item.children && item.children.length === 0) {
+            return false;
+        }
+        
+        return true;
+    });
+});
+</script>
+
+<template>
+    <SidebarGroup class="px-2 py-0">
+        <SidebarGroupLabel>{{ t('dashboard.sidebar.super_admin_section') }}</SidebarGroupLabel>
+        <SidebarMenu>
+            <template v-for="item in filteredNav" :key="item.title">
+                <!-- Single link (no children) -->
+                <SidebarMenuItem v-if="'href' in item && item.href">
+                    <SidebarMenuButton
+                        as-child
+                        :is-active="urlIsActive(item.href, page.url)"
+                        :tooltip="item.title"
+                    >
+                        <Link :href="item.href">
+                            <component :is="item.icon" />
+                            <span>{{ item.title }}</span>
+                        </Link>
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+                <!-- Group with children -->
+                <SidebarMenuItem v-else-if="item.children?.length">
+                    <Collapsible default-open class="group/collapsible">
+                        <CollapsibleTrigger as-child>
+                            <SidebarMenuButton
+                                :is-active="item.children.some((c) => c.href && urlIsActive(c.href, page.url))"
+                                :tooltip="item.title"
+                            >
+                                <component :is="item.icon" />
+                                <span>{{ item.title }}</span>
+                                <ChevronDown
+                                    class="ml-auto size-4 transition-transform group-data-[state=open]/collapsible:rotate-180"
+                                />
+                            </SidebarMenuButton>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                            <SidebarMenuSub>
+                                    <SidebarMenuSubItem
+                                        v-for="child in item.children"
+                                        :key="child.title"
+                                    >
+                                        <SidebarMenuSubButton
+                                            v-if="child.href"
+                                            as-child
+                                            :is-active="urlIsActive(child.href, page.url)"
+                                        >
+                                        <Link :href="child.href">
+                                            <component :is="child.icon" />
+                                            <span>{{ child.title }}</span>
+                                        </Link>
+                                    </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                            </SidebarMenuSub>
+                        </CollapsibleContent>
+                    </Collapsible>
+                </SidebarMenuItem>
+            </template>
+        </SidebarMenu>
+    </SidebarGroup>
+</template>

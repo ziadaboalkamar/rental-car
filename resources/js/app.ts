@@ -1,0 +1,50 @@
+import '../css/app.css';
+
+import { createInertiaApp, router } from '@inertiajs/vue3';
+import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
+import type { DefineComponent } from 'vue';
+import { createApp, h } from 'vue';
+import { initializeTheme } from './composables/useAppearance';
+
+import { setUrlDefaults } from './wayfinder';
+
+const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+
+const syncDocumentLocale = (props: any) => {
+    const locale = props?.locale || 'en';
+    const direction = props?.direction || (locale === 'ar' ? 'rtl' : 'ltr');
+
+    document.documentElement.lang = locale;
+    document.documentElement.dir = direction;
+};
+
+createInertiaApp({
+    title: (title) => (title ? `${title} - ${appName}` : appName),
+    resolve: (name) =>
+        resolvePageComponent(
+            `./pages/${name}.vue`,
+            import.meta.glob<DefineComponent>('./pages/**/*.vue'),
+        ),
+    setup({ el, App, props, plugin }) {
+        const pageProps = props.initialPage.props as any;
+        if (pageProps.current_tenant?.slug) {
+            setUrlDefaults({ subdomain: pageProps.current_tenant.slug });
+        }
+
+        syncDocumentLocale(pageProps);
+
+        router.on('navigate', (event: any) => {
+            syncDocumentLocale(event.detail.page.props);
+        });
+
+        createApp({ render: () => h(App, props) })
+            .use(plugin)
+            .mount(el);
+    },
+    progress: {
+        color: '#f56100',
+    },
+});
+
+// Force light mode on page load
+initializeTheme();

@@ -1,0 +1,91 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\SuperAdmin\TenantsController;
+use App\Http\Controllers\SuperAdmin\DashboardController;
+use App\Http\Controllers\SuperAdmin\PlaceholderController;
+use App\Http\Controllers\SuperAdmin\UsersController;
+use App\Http\Controllers\SuperAdmin\RolesController;
+use App\Http\Controllers\SuperAdmin\PlansController;
+use App\Http\Controllers\SuperAdmin\DiscountsController;
+use App\Http\Controllers\SuperAdmin\CarsController;
+use App\Http\Controllers\SuperAdmin\ReservationsController;
+use App\Http\Controllers\SuperAdmin\LandingSettingsController;
+use App\Http\Controllers\SuperAdmin\RevenueSubscriptionController;
+use App\Http\Controllers\SuperAdmin\PaymentProvidersController;
+
+use App\Http\Controllers\SuperAdmin\Auth\LoginController;
+use App\Http\Controllers\SuperAdmin\LogViewerController;
+
+// Dedicated Super Admin Login
+Route::middleware('guest')->group(function () {
+    Route::get('superadmin/login', [LoginController::class, 'create'])->name('superadmin.login');
+    Route::post('superadmin/login', [LoginController::class, 'store']);
+});
+
+Route::middleware(['auth', 'verified', 'active', 'super_admin'])
+    ->prefix('superadmin')
+    ->as('superadmin.')
+    ->group(function () {
+        // Logout
+        Route::post('logout', [LoginController::class, 'destroy'])->name('logout');
+
+        // Log Viewer
+        Route::middleware('permission:manage-settings')->get('logs', [LogViewerController::class, 'index'])->name('logs');
+
+        // Dashboard
+        Route::get('/', [DashboardController::class, 'index'])->name('dashboard');
+
+        // Tenants Management
+        Route::middleware('permission:manage-tenants')->resource('tenants', TenantsController::class);
+
+        // Revenue
+        Route::middleware('permission:manage-revenue')->group(function () {
+            Route::get('revenue/subscription', [RevenueSubscriptionController::class, 'index'])->name('revenue.subscription');
+            Route::get('revenue/transactions', [PlaceholderController::class, 'transactions'])->name('revenue.transactions');
+        });
+
+        // User Management (Super Admin users: can log in to super admin area)
+        Route::middleware('permission:manage-users')->group(function () {
+            Route::get('users', [UsersController::class, 'index'])->name('users.index');
+            Route::get('users/create', [UsersController::class, 'create'])->name('users.create');
+            Route::post('users', [UsersController::class, 'store'])->name('users.store');
+            Route::get('users/{user}/edit', [UsersController::class, 'edit'])->name('users.edit');
+            Route::put('users/{user}', [UsersController::class, 'update'])->name('users.update');
+        });
+
+        // Roles: create role and assign permissions; users get permissions via their role(s)
+        Route::middleware('permission:manage-roles')->group(function () {
+            Route::get('roles', [RolesController::class, 'index'])->name('roles.index');
+            Route::get('roles/create', [RolesController::class, 'create'])->name('roles.create');
+            Route::post('roles', [RolesController::class, 'store'])->name('roles.store');
+            Route::get('roles/{role}/edit', [RolesController::class, 'edit'])->name('roles.edit');
+            Route::put('roles/{role}', [RolesController::class, 'update'])->name('roles.update');
+            Route::delete('roles/{role}', [RolesController::class, 'destroy'])->name('roles.destroy');
+        });
+
+        // Product Management
+        Route::middleware('permission:manage-settings')->group(function () {
+            Route::resource('plans', PlansController::class)->except(['show']);
+            Route::resource('discounts', DiscountsController::class)->except(['show']);
+        });
+
+        // Cars (all cars with tenant name)
+        Route::get('cars', [CarsController::class, 'index'])->name('cars.index')->middleware('permission:manage-cars');
+        Route::get('reservations', [ReservationsController::class, 'index'])->name('reservations.index')->middleware('permission:manage-reservations');
+
+        // Settings
+        Route::middleware('permission:manage-settings')->group(function () {
+            Route::get('settings/general', [LandingSettingsController::class, 'edit'])->name('settings.general');
+            Route::put('settings/general', [LandingSettingsController::class, 'update'])->name('settings.general.update');
+            Route::post('settings/general/test-ai-connection', [LandingSettingsController::class, 'testAiConnection'])->name('settings.general.test-ai-connection');
+            Route::redirect('settings/stripe', 'settings/payment-providers', 302)->name('settings.stripe');
+            Route::put('settings/stripe', function () {
+                return redirect()
+                    ->route('superadmin.settings.payment-providers')
+                    ->with('error', 'Stripe settings page is deprecated. Use Payment Providers.');
+            })->name('settings.stripe.update');
+            Route::get('settings/payment-providers', [PaymentProvidersController::class, 'index'])->name('settings.payment-providers');
+            Route::put('settings/payment-providers/{paymentProvider}', [PaymentProvidersController::class, 'update'])->name('settings.payment-providers.update');
+        });
+    });
