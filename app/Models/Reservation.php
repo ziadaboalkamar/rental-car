@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ReservationStatus;
+use App\Services\Rentals\RentalStatusSyncService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -37,6 +38,10 @@ class Reservation extends Model
         'subtotal',
         'tax_amount',
         'discount_amount',
+        'coupon_id',
+        'coupon_code',
+        'auto_discount_id',
+        'auto_discount_amount',
         'total_amount',
         'status',
         'notes',
@@ -59,6 +64,9 @@ class Reservation extends Model
         'subtotal' => 'decimal:2',
         'tax_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
+        'coupon_id' => 'integer',
+        'auto_discount_id' => 'integer',
+        'auto_discount_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'status' => ReservationStatus::class,
         'cancelled_at' => 'datetime',
@@ -88,6 +96,18 @@ class Reservation extends Model
                 $reservation->reservation_number = 'RES-' . strtoupper(Str::random(8));
             }
         });
+
+        static::saved(function (self $reservation): void {
+            app(RentalStatusSyncService::class)->syncCarsByIds([$reservation->car_id]);
+        });
+
+        static::deleted(function (self $reservation): void {
+            app(RentalStatusSyncService::class)->syncCarsByIds([$reservation->car_id]);
+        });
+
+        static::restored(function (self $reservation): void {
+            app(RentalStatusSyncService::class)->syncCarsByIds([$reservation->car_id]);
+        });
     }
 
     /**
@@ -104,6 +124,16 @@ class Reservation extends Model
     public function car(): BelongsTo
     {
         return $this->belongsTo(Car::class);
+    }
+
+    public function coupon(): BelongsTo
+    {
+        return $this->belongsTo(Coupon::class);
+    }
+
+    public function autoDiscount(): BelongsTo
+    {
+        return $this->belongsTo(CarDiscount::class, 'auto_discount_id');
     }
 
     /**

@@ -9,8 +9,9 @@ import { ref, computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 
 const page = usePage<any>();
-const { t } = useTrans();
+const { t, locale } = useTrans();
 const currentTenant = computed(() => page.props.current_tenant);
+const tenantSiteSettings = computed(() => page.props.tenant_site_settings ?? null);
 const tenantSlug = computed(() => currentTenant.value?.slug ?? null);
 const fleetUrl = computed(() =>
     tenantSlug.value ? tenantFleet(tenantSlug.value).url : mainFleet().url
@@ -19,6 +20,45 @@ const aboutUrl = computed(() =>
     tenantSlug.value ? tenantAbout(tenantSlug.value).url : mainAbout().url
 );
 const canSubmitTenantTicket = computed(() => !!tenantSlug.value);
+const contactPageContent = computed(() => tenantSiteSettings.value?.contact_page ?? null);
+
+const localizedText = (value: any, fallback = ''): string => {
+    const currentLocale = String(locale.value || 'en');
+
+    if (typeof value === 'string') {
+        return value.trim() !== '' ? value : fallback;
+    }
+
+    if (value && typeof value === 'object') {
+        const candidate = value[currentLocale] || value.en || value.ar;
+        if (typeof candidate === 'string' && candidate.trim() !== '') {
+            return candidate;
+        }
+    }
+
+    return fallback;
+};
+
+const contactPhone = computed(() => tenantSiteSettings.value?.contact?.phone || '+1 (555) 123-4567');
+const contactEmail = computed(() => tenantSiteSettings.value?.contact?.email || 'info@realrentcar.com');
+const contactAddress = computed(() =>
+    localizedText(
+        tenantSiteSettings.value?.contact?.address,
+        '123 Main Street\nDowntown District\nCity, State 12345'
+    )
+);
+const contactHours = computed(() =>
+    localizedText(
+        contactPageContent.value?.hours,
+        'Monday - Friday: 8:00 AM - 8:00 PM\nSaturday: 9:00 AM - 6:00 PM\nSunday: 10:00 AM - 4:00 PM'
+    )
+);
+const contactHoursLines = computed(() =>
+    String(contactHours.value)
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+);
 
 const form = useForm({
     name: '',
@@ -55,9 +95,9 @@ const sendTicket = () => {
             setTimeout(() => {
                 showNotification.value = false;
             }, 2000);
-        }
+        },
     });
-}
+};
 </script>
 <template>
     <HomeLayout>
@@ -70,10 +110,10 @@ const sendTicket = () => {
                 <!-- Header Section -->
                 <div class="mb-16 text-center">
                     <h1 class="mb-4 text-4xl font-bold text-gray-900">
-                        {{ t('contact.title') }}
+                        {{ localizedText(contactPageContent?.title, t('contact.title')) }}
                     </h1>
                     <p class="mx-auto max-w-2xl text-xl text-gray-600">
-                        {{ t('contact.subtitle') }}
+                        {{ localizedText(contactPageContent?.subtitle, t('contact.subtitle')) }}
                     </p>
                 </div>
 
@@ -84,7 +124,7 @@ const sendTicket = () => {
                             class="rounded-lg border border-gray-200 bg-white p-8 shadow-sm"
                         >
                             <h2 class="mb-6 text-2xl font-bold text-gray-900">
-                                {{ t('contact.send_message') }}
+                                {{ localizedText(contactPageContent?.form_title, t('contact.send_message')) }}
                             </h2>
 
                             <form class="space-y-6"
@@ -185,7 +225,7 @@ const sendTicket = () => {
                             class="rounded-lg border border-gray-200 bg-gray-50 p-8"
                         >
                             <h3 class="mb-6 text-xl font-bold text-gray-900">
-                                {{ t('contact.get_in_touch') }}
+                                {{ localizedText(contactPageContent?.info_title, t('contact.get_in_touch')) }}
                             </h3>
 
                             <div class="space-y-6">
@@ -197,7 +237,7 @@ const sendTicket = () => {
                                         {{ t('contact.phone') }}
                                     </h4>
                                     <p class="text-gray-600">
-                                        +1 (555) 123-4567
+                                        {{ contactPhone }}
                                     </p>
                                 </div>
 
@@ -209,7 +249,7 @@ const sendTicket = () => {
                                         {{ t('contact.email') }}
                                     </h4>
                                     <p class="text-gray-600">
-                                        info@realrentcar.com
+                                        {{ contactEmail }}
                                     </p>
                                 </div>
 
@@ -220,11 +260,7 @@ const sendTicket = () => {
                                     >
                                         {{ t('contact.address') }}
                                     </h4>
-                                    <p class="text-gray-600">
-                                        123 Main Street<br />
-                                        Downtown District<br />
-                                        City, State 12345
-                                    </p>
+                                    <p class="whitespace-pre-line text-gray-600">{{ contactAddress }}</p>
                                 </div>
 
                                 <!-- Business Hours -->
@@ -235,11 +271,7 @@ const sendTicket = () => {
                                         {{ t('contact.business_hours') }}
                                     </h4>
                                     <div class="space-y-1 text-gray-600">
-                                        <p>
-                                            Monday - Friday: 8:00 AM - 8:00 PM
-                                        </p>
-                                        <p>Saturday: 9:00 AM - 6:00 PM</p>
-                                        <p>Sunday: 10:00 AM - 4:00 PM</p>
+                                        <p v-for="(hourLine, idx) in contactHoursLines" :key="idx">{{ hourLine }}</p>
                                     </div>
                                 </div>
                             </div>
@@ -250,7 +282,7 @@ const sendTicket = () => {
                             class="mt-8 rounded-lg border border-gray-200 bg-white p-6"
                         >
                             <h3 class="mb-4 text-lg font-bold text-gray-900">
-                                {{ t('contact.quick_links') }}
+                                {{ localizedText(contactPageContent?.quick_links_title, t('contact.quick_links')) }}
                             </h3>
                             <div class="space-y-3">
                                 <a

@@ -23,6 +23,10 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 use Throwable;
+use libphonenumber\NumberParseException;
+use libphonenumber\PhoneNumberFormat;
+use libphonenumber\PhoneNumberUtil;
+use Symfony\Component\Intl\Countries;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
@@ -47,8 +51,12 @@ class RegisteredUserController extends Controller
                 'name' => $registration['name'] ?? null,
                 'email' => $registration['email'] ?? null,
                 'custom_domain' => $registration['custom_domain'] ?? null,
+                'country_iso2' => $registration['country_iso2'] ?? null,
+                'phone_country_code' => $registration['phone_country_code'] ?? null,
+                'phone_national' => $registration['phone_national'] ?? null,
                 'phone' => $registration['phone'] ?? null,
             ],
+            'countries' => $this->registrationCountries(),
         ]);
     }
 
@@ -63,6 +71,8 @@ class RegisteredUserController extends Controller
             'name' => $request->input('company_name', $request->input('name')),
             'email' => $request->input('email_company', $request->input('email')),
             'custom_domain' => $this->normalizeDomain($request->input('custom_domain')),
+            'country_iso2' => strtoupper(trim((string) $request->input('country_iso2', ''))),
+            'phone_national' => trim((string) $request->input('phone_national', $request->input('phone', ''))),
         ]);
 
         $tenantId = TenantContext::id();
@@ -109,15 +119,43 @@ class RegisteredUserController extends Controller
                 'regex:/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i',
                 'unique:tenants,domain',
             ],
-            'phone' => 'nullable|string|max:20',
+            'country_iso2' => [
+                'nullable',
+                'string',
+                'size:2',
+                Rule::in($this->registrationCountryIso2List()),
+                'required_with:phone_national',
+            ],
+            'phone_national' => [
+                'nullable',
+                'string',
+                'max:30',
+                'required_with:country_iso2',
+            ],
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
         ]);
+
+        [$phoneE164, $phoneCountryCode, $phoneNational] = $this->normalizeRegistrationPhone(
+            $validated['country_iso2'] ?? null,
+            $validated['phone_national'] ?? null
+        );
+
+        if (!empty($validated['phone_national']) && $phoneE164 === null) {
+            return back()
+                ->withErrors([
+                    'phone_national' => 'Please enter a valid phone number for the selected country.',
+                ])
+                ->withInput();
+        }
 
         $request->session()->put(self::REGISTRATION_SESSION_KEY, [
             'name' => $validated['name'],
             'email' => $validated['email'],
             'custom_domain' => $validated['custom_domain'] ?? null,
-            'phone' => $validated['phone'] ?? null,
+            'country_iso2' => strtoupper(trim((string) ($validated['country_iso2'] ?? ''))) ?: null,
+            'phone_country_code' => $phoneCountryCode,
+            'phone_national' => $phoneNational,
+            'phone' => $phoneE164,
             'password_hash' => Hash::make($validated['password']),
         ]);
 
@@ -393,7 +431,7 @@ class RegisteredUserController extends Controller
             'status' => 'pending',
             'payer_name' => (string) ($registration['name'] ?? ''),
             'payer_email' => (string) ($registration['email'] ?? ''),
-            'payer_phone' => (string) ($registration['phone'] ?? ''),
+            'payer_phone' => (string) ($registration['phone_national'] ?? $registration['phone'] ?? ''),
             'metadata' => [
                 'registration_mode' => $registration['mode'] ?? 'new',
                 'auth_route_prefix' => TenantContext::id() ? 'tenant' : 'central',
@@ -416,7 +454,9 @@ class RegisteredUserController extends Controller
                 $checkout = $myFatoorah->createCheckout([
                     'amount' => $transaction->amount,
                     'currency' => $transaction->currency,
-                    'payment_method_id' => (int) ($request->integer('payment_method_id') ?: 0),
+                    'payment_method_id' => $request->filled('payment_method_id')
+                        ? (int) $request->input('payment_method_id')
+                        : null,
                     'callback_url' => $callbackUrl,
                     'error_url' => $errorUrl,
                     'customer_name' => $transaction->payer_name,
@@ -436,7 +476,9 @@ class RegisteredUserController extends Controller
                     'provider_response' => $checkout['raw'] ?? [],
                     'metadata' => array_merge($transaction->metadata ?? [], [
                         'payment_url_created' => true,
-                        'payment_method_id' => (int) ($request->integer('payment_method_id') ?: 0),
+                        'payment_method_id' => $request->filled('payment_method_id')
+                            ? (int) $request->input('payment_method_id')
+                            : null,
                     ]),
                 ]);
 
@@ -689,6 +731,10 @@ class RegisteredUserController extends Controller
                     'domain' => $registration['custom_domain'] ?? null,
                     'email' => $registration['email'],
                     'phone' => $registration['phone'] ?? null,
+                    'country_iso2' => $registration['country_iso2'] ?? null,
+                    'phone_country_code' => $registration['phone_country_code'] ?? null,
+                    'phone_national' => $registration['phone_national'] ?? null,
+                    'phone_e164' => $registration['phone'] ?? null,
                     'plan_id' => $plan->id,
                     'trial_ends_at' => $accessEndsAt,
                     'is_active' => true,
@@ -1311,6 +1357,10 @@ class RegisteredUserController extends Controller
                     'domain' => $registration['custom_domain'] ?? null,
                     'email' => $registration['email'],
                     'phone' => $registration['phone'] ?? null,
+                    'country_iso2' => $registration['country_iso2'] ?? null,
+                    'phone_country_code' => $registration['phone_country_code'] ?? null,
+                    'phone_national' => $registration['phone_national'] ?? null,
+                    'phone_e164' => $registration['phone'] ?? null,
                     'plan_id' => $plan->id,
                     'trial_ends_at' => $accessEndsAt,
                     'is_active' => true,
@@ -1688,6 +1738,87 @@ class RegisteredUserController extends Controller
         }
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function registrationCountries(): array
+    {
+        static $countries = null;
+
+        if (is_array($countries)) {
+            return $countries;
+        }
+
+        $namesEn = Countries::getNames('en');
+        $namesAr = Countries::getNames('ar');
+        $phoneUtil = PhoneNumberUtil::getInstance();
+        $items = [];
+
+        foreach ($namesEn as $iso2 => $nameEn) {
+            $iso = strtoupper((string) $iso2);
+
+            if (strlen($iso) !== 2) {
+                continue;
+            }
+
+            $countryCode = (int) $phoneUtil->getCountryCodeForRegion($iso);
+            if ($countryCode <= 0) {
+                continue;
+            }
+
+            $items[] = [
+                'iso2' => $iso,
+                'name_en' => $nameEn,
+                'name_ar' => $namesAr[$iso] ?? $nameEn,
+                'dial_code' => '+'.$countryCode,
+            ];
+        }
+
+        usort($items, static fn (array $a, array $b): int => strcmp((string) $a['name_en'], (string) $b['name_en']));
+        $countries = $items;
+
+        return $countries;
+    }
+
+    private function registrationCountryIso2List(): array
+    {
+        return array_map(
+            static fn (array $country): string => (string) $country['iso2'],
+            $this->registrationCountries()
+        );
+    }
+
+    private function normalizeRegistrationPhone(?string $countryIso2, ?string $phoneNational): array
+    {
+        $countryIso2 = strtoupper(trim((string) ($countryIso2 ?? '')));
+        $phoneNational = trim((string) ($phoneNational ?? ''));
+
+        if ($phoneNational === '') {
+            return [null, null, null];
+        }
+
+        if ($countryIso2 === '') {
+            return [null, null, $phoneNational];
+        }
+
+        $phoneUtil = PhoneNumberUtil::getInstance();
+
+        try {
+            $parsed = $phoneUtil->parse($phoneNational, $countryIso2);
+        } catch (NumberParseException) {
+            return [null, null, $phoneNational];
+        }
+
+        if (!$phoneUtil->isValidNumberForRegion($parsed, $countryIso2)) {
+            if (!$phoneUtil->isValidNumber($parsed)) {
+                return [null, null, $phoneNational];
+            }
+        }
+
+        $e164 = $phoneUtil->format($parsed, PhoneNumberFormat::E164);
+        $dialCode = '+'.$parsed->getCountryCode();
+        $normalizedNational = (string) $parsed->getNationalNumber();
+
+        return [$e164, $dialCode, $normalizedNational];
     }
 
     private function ensureTenantAdminFullAccess(User $user, ?Tenant $tenant = null): void

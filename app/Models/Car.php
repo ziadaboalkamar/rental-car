@@ -132,6 +132,26 @@ class Car extends Model
         return $this->hasMany(Reservation::class);
     }
 
+    public function maintenances(): HasMany
+    {
+        return $this->hasMany(CarMaintenance::class);
+    }
+
+    public function violations(): HasMany
+    {
+        return $this->hasMany(CarViolation::class);
+    }
+
+    public function coupons(): HasMany
+    {
+        return $this->hasMany(Coupon::class);
+    }
+
+    public function carDiscounts(): HasMany
+    {
+        return $this->hasMany(CarDiscount::class);
+    }
+
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);

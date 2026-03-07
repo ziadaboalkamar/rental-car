@@ -12,6 +12,11 @@ const $page = usePage<any>();
 const { t, locale } = useTrans();
 const currentTenant = computed(() => $page.props.current_tenant);
 const tenantSiteSettings = computed(() => $page.props.tenant_site_settings ?? null);
+const availableLocales = computed<string[]>(() =>
+    Array.isArray($page.props?.available_locales) && $page.props.available_locales.length
+        ? $page.props.available_locales
+        : ['en']
+);
 const isTenant = computed(() => !!currentTenant.value);
 const role = computed(() => $page.props.auth.user?.role);
 const localeSwitcherUrl = (targetLocale: string) =>
@@ -113,22 +118,16 @@ const themeVars = computed(() => ({
 
                     <!-- Auth Buttons -->
                     <div class="flex items-center space-x-3">
-                        <div class="hidden items-center rounded-lg border border-gray-200 bg-white p-1 md:flex">
+                        <div v-if="availableLocales.length > 0" class="hidden items-center rounded-lg border border-gray-200 bg-white p-1 md:flex">
                             <a
-                                :href="localeSwitcherUrl('en')"
+                                v-for="localeCode in availableLocales"
+                                :key="localeCode"
+                                :href="localeSwitcherUrl(localeCode)"
                                 class="rounded-md px-2 py-1 text-xs font-semibold transition-colors"
-                                :class="locale === 'en' ? 'text-white' : 'text-gray-600 hover:text-orange-600'"
-                                :style="locale === 'en' ? { backgroundColor: 'var(--tenant-primary)' } : undefined"
+                                :class="locale === localeCode ? 'text-white' : 'text-gray-600 hover:text-orange-600'"
+                                :style="locale === localeCode ? { backgroundColor: 'var(--tenant-primary)' } : undefined"
                             >
-                                EN
-                            </a>
-                            <a
-                                :href="localeSwitcherUrl('ar')"
-                                class="rounded-md px-2 py-1 text-xs font-semibold transition-colors"
-                                :class="locale === 'ar' ? 'text-white' : 'text-gray-600 hover:text-orange-600'"
-                                :style="locale === 'ar' ? { backgroundColor: 'var(--tenant-primary)' } : undefined"
-                            >
-                                AR
+                                {{ localeCode.toUpperCase() }}
                             </a>
                         </div>
                         <Link

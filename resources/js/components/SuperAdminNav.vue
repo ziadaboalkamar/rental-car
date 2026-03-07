@@ -30,6 +30,7 @@ import {
     CarFront,
     CalendarDays,
     Cog,
+    LifeBuoy,
 } from 'lucide-vue-next';
 
 import { type NavItem } from '@/types';
@@ -85,12 +86,20 @@ const superAdminNav = computed<NavItem[]>(() => [
         permission: 'manage-reservations',
     },
     {
+        title: 'Tenant Support',
+        href: '/superadmin/support/tenants',
+        icon: LifeBuoy,
+        permission: 'manage-tenants',
+    },
+    {
         title: t('dashboard.sidebar.super_admin.settings'),
         icon: Settings,
         permission: 'manage-settings',
         children: [
             { title: t('dashboard.sidebar.super_admin.general_settings'), href: '/superadmin/settings/general', icon: Cog },
+            { title: 'Login Settings', href: '/superadmin/settings/login', icon: Shield },
             { title: 'Payment Providers', href: '/superadmin/settings/payment-providers', icon: CreditCard },
+            { title: 'Languages', href: '/superadmin/settings/languages', icon: Cog },
         ],
     },
 ]);

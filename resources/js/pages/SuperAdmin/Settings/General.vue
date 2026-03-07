@@ -81,6 +81,19 @@ interface AiProviderSettings {
     };
 }
 
+interface SocialLoginSettings {
+    google: {
+        enabled: boolean;
+        client_id: string;
+        client_secret: string;
+    };
+    apple: {
+        enabled: boolean;
+        client_id: string;
+        client_secret: string;
+    };
+}
+
 const props = defineProps<{
     settings: LandingSettings;
     aiSettings: {
@@ -88,6 +101,7 @@ const props = defineProps<{
         contracts_extraction_enabled: boolean;
     };
     aiProviderSettings: AiProviderSettings;
+    socialLoginSettings: SocialLoginSettings;
 }>();
 
 const form = useForm<{
@@ -97,13 +111,18 @@ const form = useForm<{
         contracts_extraction_enabled: boolean;
     };
     ai_provider: AiProviderSettings;
+    social_login: SocialLoginSettings;
 }>({
     settings: JSON.parse(JSON.stringify(props.settings)),
     ai: {
         enabled: !!props.aiSettings?.enabled,
         contracts_extraction_enabled: !!props.aiSettings?.contracts_extraction_enabled,
     },
-    ai_provider: JSON.parse(JSON.stringify(props.aiProviderSettings)),
+    ai_provider: JSON.parse(JSON.stringify(props.aiProviderSettings || {})),
+    social_login: JSON.parse(JSON.stringify(props.socialLoginSettings || {
+        google: { enabled: false, client_id: '', client_secret: '' },
+        apple: { enabled: false, client_id: '', client_secret: '' },
+    })),
 });
 
 const addHeroFeature = () => {

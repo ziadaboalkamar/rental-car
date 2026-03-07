@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\BookingController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\HomePagesController;
 use App\Http\Controllers\LocalizationController;
@@ -22,6 +23,12 @@ Route::domain('{subdomain}.' . $baseDomain)->group(function () use ($localizedGr
     Route::get('/locale/{locale}', [LocalizationController::class, 'switch'])->name('tenant.locale.switch');
 
     Route::group($localizedGroup, function () {
+        Route::middleware('auth')->group(function () {
+            Route::get('/notifications', [NotificationController::class, 'index']);
+            Route::post('/notifications/{notificationId}/read', [NotificationController::class, 'read']);
+            Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
+        });
+
         Route::middleware('tenant.subscription')->group(function () {
             Route::get('/', [HomePagesController::class, 'index'])->name('tenant.home');
             Route::get('/fleet', [HomePagesController::class, 'fleet'])->name('tenant.fleet');
@@ -30,12 +37,17 @@ Route::domain('{subdomain}.' . $baseDomain)->group(function () use ($localizedGr
             Route::post('/contact/guestContact', [HomePagesController::class, 'guestContact'])->name('tenant.contact.guestContact');
 
             Route::get('/fleet/{car}', [BookingController::class, 'show'])->name('tenant.fleet.show');
+            Route::post('/fleet/{car}/coupon/preview', [BookingController::class, 'previewCoupon'])->name('tenant.fleet.coupon.preview');
             Route::post('/fleet/{car}', [BookingController::class, 'book'])->name('tenant.fleet.book');
             Route::get('/booking/{reservation}/checkout', [BookingController::class, 'checkout'])->name('tenant.booking.checkout');
             Route::get('/booking/{reservation}/payment/success', [BookingController::class, 'paymentSuccess'])->name('tenant.booking.payment.success');
             Route::get('/booking/{reservation}/payment/cancel', [BookingController::class, 'paymentCancel'])->name('tenant.booking.payment.cancel');
             Route::get('/booking/{reservation}', [BookingController::class, 'confirmation'])->name('tenant.booking.confirmation');
         });
+
+        Route::get('/login/social-callback', [\App\Http\Controllers\Auth\SocialLoginController::class, 'tenantCallback'])
+            ->middleware('signed')
+            ->name('tenant.social-login.callback');
 
         // Tenant-specific auth (prefixed to avoid collision with main domain auth)
         Route::as('tenant.')->group(function () {
@@ -52,9 +64,20 @@ Route::domain($baseDomain)->group(function () use ($localizedGroup) {
     Route::post('/payment/webhooks/subscriptions/{provider}', [RegisteredUserController::class, 'subscriptionProviderWebhook'])
         ->name('subscription.provider.webhook');
 
+    Route::get('/auth/{provider}/redirect', [\App\Http\Controllers\Auth\SocialLoginController::class, 'redirect'])
+        ->name('social-login.redirect');
+    Route::get('/auth/{provider}/callback', [\App\Http\Controllers\Auth\SocialLoginController::class, 'callback'])
+        ->name('social-login.callback');
+
     Route::get('/locale/{locale}', [LocalizationController::class, 'switch'])->name('locale.switch');
 
     Route::group($localizedGroup, function () {
+        Route::middleware('auth')->group(function () {
+            Route::get('/notifications', [NotificationController::class, 'index']);
+            Route::post('/notifications/{notificationId}/read', [NotificationController::class, 'read']);
+            Route::post('/notifications/read-all', [NotificationController::class, 'readAll']);
+        });
+
         Route::get('/', [HomePagesController::class, 'index'])->name('home');
         Route::get('/fleet', [HomePagesController::class, 'fleet'])->name('fleet');
         Route::get('/about', [HomePagesController::class, 'about'])->name('about');

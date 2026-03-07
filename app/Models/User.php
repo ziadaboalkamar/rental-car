@@ -34,6 +34,8 @@ class User extends Authenticatable implements LaratrustUser
         'is_active',
         'trial_ends_at',
         'branch_id',
+        'provider',
+        'provider_id',
     ];
 
     /**

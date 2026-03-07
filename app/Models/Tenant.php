@@ -24,6 +24,10 @@ class Tenant extends Model
         'domain',
         'email',
         'phone',
+        'country_iso2',
+        'phone_country_code',
+        'phone_national',
+        'phone_e164',
         'plan_id',
         'plan',
         'is_active',
@@ -49,6 +53,10 @@ class Tenant extends Model
             'plan_id' => 'integer',
             'settings' => 'array',
             'trial_ends_at' => 'datetime',
+            'country_iso2' => 'string',
+            'phone_country_code' => 'string',
+            'phone_national' => 'string',
+            'phone_e164' => 'string',
             'stripe_onboarded_at' => 'datetime',
             'stripe_details_submitted' => 'boolean',
             'stripe_charges_enabled' => 'boolean',
@@ -110,6 +118,19 @@ class Tenant extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(Message::class);
+    }
+
+    /**
+     * Get coupons for this tenant.
+     */
+    public function coupons(): HasMany
+    {
+        return $this->hasMany(Coupon::class);
+    }
+
+    public function carDiscounts(): HasMany
+    {
+        return $this->hasMany(CarDiscount::class);
     }
 
     /**

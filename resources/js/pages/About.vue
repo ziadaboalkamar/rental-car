@@ -7,8 +7,9 @@ import { contact as mainContact, fleet as mainFleet } from '@/routes';
 import { contact as tenantContact, fleet as tenantFleet } from '@/routes/tenant';
 
 const page = usePage<any>();
-const { t } = useTrans();
+const { t, locale } = useTrans();
 const currentTenant = computed(() => page.props.current_tenant);
+const tenantSiteSettings = computed(() => page.props.tenant_site_settings ?? null);
 const fleetUrl = computed(() =>
     currentTenant.value?.slug
         ? tenantFleet(currentTenant.value.slug).url
@@ -19,6 +20,24 @@ const contactUrl = computed(() =>
         ? tenantContact(currentTenant.value.slug).url
         : mainContact().url
 );
+const aboutContent = computed(() => tenantSiteSettings.value?.about ?? null);
+
+const localizedText = (value: any, fallback = ''): string => {
+    const currentLocale = String(locale.value || 'en');
+
+    if (typeof value === 'string') {
+        return value.trim() !== '' ? value : fallback;
+    }
+
+    if (value && typeof value === 'object') {
+        const candidate = value[currentLocale] || value.en || value.ar;
+        if (typeof candidate === 'string' && candidate.trim() !== '') {
+            return candidate;
+        }
+    }
+
+    return fallback;
+};
 </script>
 <template>
     <HomeLayout>
@@ -27,12 +46,12 @@ const contactUrl = computed(() =>
                 <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
                     <div class="text-center">
                         <h1 class="mb-6 text-4xl font-bold md:text-5xl">
-                            {{ t('about.title') }}
+                            {{ localizedText(aboutContent?.title, t('about.title')) }}
                         </h1>
                         <p
                             class="mx-auto max-w-3xl text-xl leading-relaxed text-gray-300"
                         >
-                            {{ t('about.subtitle') }}
+                            {{ localizedText(aboutContent?.subtitle, t('about.subtitle')) }}
                         </p>
                     </div>
                 </div>
@@ -43,16 +62,16 @@ const contactUrl = computed(() =>
                     <div class="grid items-center gap-12 lg:grid-cols-2">
                         <div>
                             <h2 class="mb-6 text-3xl font-bold text-gray-900">
-                                {{ t('about.story_title') }}
+                                {{ localizedText(aboutContent?.story_title, t('about.story_title')) }}
                             </h2>
                             <div
                                 class="space-y-4 leading-relaxed text-gray-600"
                             >
                                 <p>
-                                    {{ t('about.story_p1') }}
+                                    {{ localizedText(aboutContent?.story_p1, t('about.story_p1')) }}
                                 </p>
                                 <p>
-                                    {{ t('about.story_p2') }}
+                                    {{ localizedText(aboutContent?.story_p2, t('about.story_p2')) }}
                                 </p>
                             </div>
                         </div>
@@ -102,10 +121,10 @@ const contactUrl = computed(() =>
                 <div class="mb-20">
                     <div class="mb-12 text-center">
                         <h2 class="mb-4 text-3xl font-bold text-gray-900">
-                            {{ t('about.mission_title') }}
+                            {{ localizedText(aboutContent?.mission_title, t('about.mission_title')) }}
                         </h2>
                         <p class="mx-auto max-w-2xl text-gray-600">
-                            {{ t('about.mission_subtitle') }}
+                            {{ localizedText(aboutContent?.mission_subtitle, t('about.mission_subtitle')) }}
                         </p>
                     </div>
 
@@ -406,23 +425,23 @@ const contactUrl = computed(() =>
                     class="rounded-lg bg-gray-900 p-8 text-center text-white md:p-12"
                 >
                     <h2 class="mb-4 text-3xl font-bold">
-                        {{ t('about.cta_title') }}
+                        {{ localizedText(aboutContent?.cta_title, t('about.cta_title')) }}
                     </h2>
                     <p class="mx-auto mb-8 max-w-2xl text-gray-300">
-                        {{ t('about.cta_subtitle') }}
+                        {{ localizedText(aboutContent?.cta_subtitle, t('about.cta_subtitle')) }}
                     </p>
                     <div class="flex flex-col justify-center gap-4 sm:flex-row">
                         <a
                             :href="fleetUrl"
                             class="rounded-lg bg-orange-500 px-8 py-3 font-semibold text-white transition-colors duration-200 hover:bg-orange-600"
                         >
-                            {{ t('about.cta_browse') }}
+                            {{ localizedText(aboutContent?.cta_browse_text, t('about.cta_browse')) }}
                         </a>
                         <a
                             :href="contactUrl"
                             class="rounded-lg border-2 border-white bg-transparent px-8 py-3 font-semibold text-white transition-colors duration-200 hover:bg-white hover:text-gray-900"
                         >
-                            {{ t('about.cta_contact') }}
+                            {{ localizedText(aboutContent?.cta_contact_text, t('about.cta_contact')) }}
                         </a>
                     </div>
                 </div>

@@ -1,7 +1,6 @@
 <?php
 
-return [
-    'supportedLocales' => [
+$supportedLocales = [
         'en' => [
             'name' => 'English',
             'script' => 'Latn',
@@ -14,14 +13,16 @@ return [
             'native' => 'العربية',
             'regional' => 'ar_AE',
         ],
-    ],
+    ];
+
+return [
+    'supportedLocales' => $supportedLocales,
 
     'useAcceptLanguageHeader' => false,
     'hideDefaultLocaleInURL' => true,
-    'localesOrder' => ['en', 'ar'],
+    'localesOrder' => array_keys($supportedLocales),
     'localesMapping' => [],
     'utf8suffix' => env('LARAVELLOCALIZATION_UTF8SUFFIX', '.UTF-8'),
     'urlsIgnored' => [],
     'httpMethodsIgnored' => ['POST', 'PUT', 'PATCH', 'DELETE'],
 ];
-

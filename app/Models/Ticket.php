@@ -20,6 +20,7 @@ class Ticket extends Model
         'ticket_number',
         'subject',
         'status',
+        'channel',
         'user_id',
         'guest_name',
         'guest_email',
@@ -69,7 +70,17 @@ class Ticket extends Model
 
     public function scopeGuest($query)
     {
-        return $query->whereNull('user_id');
+        return $query->where('channel', 'guest');
+    }
+
+    public function scopeCustomer($query)
+    {
+        return $query->where('channel', 'customer');
+    }
+
+    public function scopeTenant($query)
+    {
+        return $query->where('channel', 'tenant');
     }
 
     // Accessors & Mutators

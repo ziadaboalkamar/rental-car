@@ -4,7 +4,9 @@ namespace App\Support\Payments;
 
 use App\Models\PaymentProvider;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
+use Throwable;
 
 class MyFatoorahSubscriptionProvider
 {
@@ -50,24 +52,43 @@ class MyFatoorahSubscriptionProvider
     public function createCheckout(array $payload, PaymentProvider $provider): array
     {
         $config = $this->providerConfig($provider);
+        $amount = max(0.01, (float) ($payload['amount'] ?? 0));
+        $currency = $this->normalizeCurrency((string) ($payload['currency'] ?? ''), $config);
 
-        $paymentMethodId = (int) ($payload['payment_method_id'] ?? $config['payment_method_id'] ?? 0);
+        $paymentMethodId = $this->resolvePaymentMethodId(
+            $provider,
+            $config,
+            $amount,
+            $currency,
+            isset($payload['payment_method_id']) ? (int) $payload['payment_method_id'] : null
+        );
+
         if ($paymentMethodId <= 0) {
             throw new RuntimeException('MyFatoorah payment_method_id is required in provider config to start checkout.');
         }
 
         $baseUrl = $this->resolveBaseUrl($provider, $config);
+        $callbackUrl = trim((string) ($payload['callback_url'] ?? ''));
+        $errorUrl = trim((string) ($payload['error_url'] ?? ''));
+
+        if (!filter_var($callbackUrl, FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('Invalid callback URL for MyFatoorah.');
+        }
+
+        if (!filter_var($errorUrl, FILTER_VALIDATE_URL)) {
+            throw new RuntimeException('Invalid error URL for MyFatoorah.');
+        }
 
         $requestBody = [
             'PaymentMethodId' => $paymentMethodId,
-            'InvoiceValue' => (float) $payload['amount'],
-            'CallBackUrl' => (string) $payload['callback_url'],
-            'ErrorUrl' => (string) $payload['error_url'],
+            'InvoiceValue' => $amount,
+            'CallBackUrl' => $callbackUrl,
+            'ErrorUrl' => $errorUrl,
             'Language' => (string) ($payload['language'] ?? 'en'),
             'CustomerName' => (string) ($payload['customer_name'] ?? ''),
             'CustomerEmail' => (string) ($payload['customer_email'] ?? ''),
-            'CustomerMobile' => (string) ($payload['customer_mobile'] ?? ''),
-            'DisplayCurrencyIso' => (string) ($payload['currency'] ?? 'USD'),
+            'CustomerMobile' => $this->normalizeCustomerMobile($payload['customer_mobile'] ?? null),
+            'DisplayCurrencyIso' => $currency,
             'CustomerReference' => (string) ($payload['customer_reference'] ?? ''),
             'UserDefinedField' => (string) ($payload['user_defined_field'] ?? ''),
             'InvoiceItems' => $payload['items'] ?? [],
@@ -93,6 +114,13 @@ class MyFatoorahSubscriptionProvider
         $response = $this->request($provider, 'post', rtrim($baseUrl, '/').'/v2/ExecutePayment', $requestBody);
 
         if (!$response->successful()) {
+            Log::warning('MyFatoorah ExecutePayment failed', [
+                'provider_id' => $provider->id,
+                'status' => $response->status(),
+                'request' => $requestBody,
+                'response' => $response->json(),
+            ]);
+
             throw new RuntimeException($this->extractErrorMessage($response->json()) ?: 'MyFatoorah ExecutePayment failed.');
         }
 
@@ -221,14 +249,145 @@ class MyFatoorahSubscriptionProvider
             return null;
         }
 
-        return trim((string) (
+        $message = trim((string) (
             data_get($json, 'Message')
-            ?? data_get($json, 'ValidationErrors.0.Error')
-            ?? data_get($json, 'FieldsErrors.0.Error')
             ?? data_get($json, 'Data.ErrorMessage')
-            ?? data_get($json, 'Data.InvoiceTransactions.0.Error')
             ?? ''
-        )) ?: null;
+        ));
+
+        $validationErrors = data_get($json, 'ValidationErrors');
+        if (is_array($validationErrors) && $validationErrors !== []) {
+            $mapped = collect($validationErrors)
+                ->filter(fn ($item) => is_array($item))
+                ->map(function (array $item): string {
+                    $field = trim((string) ($item['Name'] ?? $item['FieldName'] ?? ''));
+                    $error = trim((string) ($item['Error'] ?? $item['Message'] ?? ''));
+                    if ($field !== '' && $error !== '') {
+                        return $field.': '.$error;
+                    }
+
+                    return $error !== '' ? $error : $field;
+                })
+                ->filter(fn (string $line) => $line !== '')
+                ->values()
+                ->all();
+
+            if ($mapped !== []) {
+                return implode(' | ', $mapped);
+            }
+        }
+
+        $fieldErrors = data_get($json, 'FieldsErrors');
+        if (is_array($fieldErrors) && $fieldErrors !== []) {
+            $mapped = collect($fieldErrors)
+                ->filter(fn ($item) => is_array($item))
+                ->map(fn (array $item): string => trim((string) ($item['Error'] ?? $item['Message'] ?? '')))
+                ->filter(fn (string $line) => $line !== '')
+                ->values()
+                ->all();
+
+            if ($mapped !== []) {
+                return implode(' | ', $mapped);
+            }
+        }
+
+        if ($message !== '') {
+            return $message;
+        }
+
+        return trim((string) (data_get($json, 'Data.InvoiceTransactions.0.Error') ?? '')) ?: null;
+    }
+
+    private function normalizeCustomerMobile(mixed $value): ?string
+    {
+        $raw = trim((string) ($value ?? ''));
+        if ($raw === '') {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $raw) ?? '';
+        if ($digits === '') {
+            return null;
+        }
+
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+        }
+
+        // MyFatoorah commonly rejects symbols and malformed lengths.
+        // Keep digits-only and send only plausible mobile lengths.
+        $length = strlen($digits);
+        if ($length < 7 || $length > 15) {
+            return null;
+        }
+
+        return $digits;
+    }
+
+    private function resolvePaymentMethodId(
+        PaymentProvider $provider,
+        array $config,
+        float $amount,
+        string $currency,
+        ?int $requestedId
+    ): int {
+        $configuredId = (int) ($config['payment_method_id'] ?? 0);
+        $candidate = (int) ($requestedId ?: $configuredId);
+
+        try {
+            $methods = $this->listPaymentMethods($provider, $amount, $currency);
+            $methodIds = collect($methods)
+                ->pluck('id')
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn (int $id) => $id > 0)
+                ->values()
+                ->all();
+
+            if ($methodIds !== []) {
+                if (in_array($candidate, $methodIds, true)) {
+                    return $candidate;
+                }
+
+                if ($configuredId > 0 && in_array($configuredId, $methodIds, true)) {
+                    return $configuredId;
+                }
+
+                return $methodIds[0];
+            }
+        } catch (Throwable $e) {
+            Log::warning('Could not load MyFatoorah payment methods before ExecutePayment', [
+                'provider_id' => $provider->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $candidate;
+    }
+
+    private function normalizeCurrency(string $currency, array $config): string
+    {
+        $currency = strtoupper(trim($currency));
+        if ($currency !== '') {
+            return $currency;
+        }
+
+        $configured = strtoupper(trim((string) ($config['currency'] ?? '')));
+        if ($configured !== '') {
+            return $configured;
+        }
+
+        $country = strtoupper(trim((string) ($config['country'] ?? '')));
+        $countryToCurrency = [
+            'KW' => 'KWD',
+            'SA' => 'SAR',
+            'OM' => 'OMR',
+            'AE' => 'AED',
+            'BH' => 'BHD',
+            'QA' => 'QAR',
+            'US' => 'USD',
+        ];
+
+        return $countryToCurrency[$country] ?? 'USD';
     }
 
     private function toFloatOrNull(mixed $value): ?float

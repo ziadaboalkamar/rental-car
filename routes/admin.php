@@ -7,24 +7,50 @@ use App\Http\Controllers\Admin\ClientsController;
 use App\Http\Controllers\Admin\PaymentsController;
 use App\Http\Controllers\Admin\ReportsController;
 use App\Http\Controllers\Admin\SupportController;
+use App\Http\Controllers\Admin\PlatformSupportController;
 use App\Http\Controllers\Admin\BranchesController;
 use App\Http\Controllers\Admin\EmployeesController;
 use App\Http\Controllers\Admin\RolesController;
+use App\Http\Controllers\Admin\MaintenanceTypesController;
+use App\Http\Controllers\Admin\MaintenanceRecordsController;
+use App\Http\Controllers\Admin\CarViolationsController;
 use App\Http\Controllers\Admin\StripeConnectController;
 use App\Http\Controllers\Admin\PaymentProvidersController;
 use App\Http\Controllers\Admin\WebsiteSettingsController;
+use App\Http\Controllers\Admin\TranslationSettingsController;
 use App\Http\Controllers\Admin\ContractsController;
+use App\Http\Controllers\Admin\CouponsController;
+use App\Http\Controllers\Admin\CarDiscountsController;
+use App\Http\Controllers\Admin\DashboardController;
 
 Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription'])
     ->prefix('admin')
     ->as('admin.')
     ->group(function () {
-        // Redirect '/admin' to '/admin/cars' with a named route we can reference
-        Route::redirect('/', '/admin/cars')->name('home');
+        // Dashboard
+        Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::redirect('/', '/admin/dashboard')->name('home');
 
         // Cars
         Route::resource('cars', CarsController::class)
             ->except(['show'])
+            ->middleware('permission:tenant-manage-cars');
+
+        // Maintenance Types
+        Route::resource('maintenance-types', MaintenanceTypesController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-manage-cars');
+
+        // Maintenance Records
+        Route::resource('maintenance-records', MaintenanceRecordsController::class)
+            ->except(['show'])
+            ->parameters(['maintenance-records' => 'maintenance'])
+            ->middleware('permission:tenant-manage-cars');
+
+        // Car Violations
+        Route::resource('car-violations', CarViolationsController::class)
+            ->except(['show'])
+            ->parameters(['car-violations' => 'carViolation'])
             ->middleware('permission:tenant-manage-cars');
 
         // Reservations
@@ -59,6 +85,15 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
             ->only(['index'])
             ->middleware('permission:tenant-manage-payments');
 
+        // Coupons
+        Route::resource('coupons', CouponsController::class)
+            ->except(['show'])
+            ->middleware('permission:tenant-manage-payments');
+        Route::resource('car-discounts', CarDiscountsController::class)
+            ->except(['show'])
+            ->parameters(['car-discounts' => 'carDiscount'])
+            ->middleware('permission:tenant-manage-payments');
+
         // Reports
         Route::resource('reports', ReportsController::class)
             ->except(['show'])
@@ -77,6 +112,23 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
         Route::post('/support/tickets/{ticket}/close', [SupportController::class, 'close'])
         ->middleware('permission:tenant-manage-support')
         ->name('support.close');
+
+        // Tenant -> Super Admin Support
+        Route::get('/support/platform', [PlatformSupportController::class, 'index'])
+            ->middleware('permission:tenant-manage-support')
+            ->name('support.platform.index');
+        Route::post('/support/platform', [PlatformSupportController::class, 'store'])
+            ->middleware('permission:tenant-manage-support')
+            ->name('support.platform.store');
+        Route::get('/support/platform/{ticket}', [PlatformSupportController::class, 'show'])
+            ->middleware('permission:tenant-manage-support')
+            ->name('support.platform.show');
+        Route::post('/support/platform/{ticket}/reply', [PlatformSupportController::class, 'reply'])
+            ->middleware('permission:tenant-manage-support')
+            ->name('support.platform.reply');
+        Route::post('/support/platform/{ticket}/close', [PlatformSupportController::class, 'close'])
+            ->middleware('permission:tenant-manage-support')
+            ->name('support.platform.close');
 
         // Branches
         Route::resource('branches', BranchesController::class)
@@ -107,6 +159,12 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
         Route::put('settings/website', [WebsiteSettingsController::class, 'update'])
             ->middleware('permission:tenant-manage-settings')
             ->name('settings.website.update');
+        Route::get('settings/translations', [TranslationSettingsController::class, 'edit'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.translations.edit');
+        Route::put('settings/translations', [TranslationSettingsController::class, 'update'])
+            ->middleware('permission:tenant-manage-settings')
+            ->name('settings.translations.update');
 
         Route::get('settings/stripe-connect', [StripeConnectController::class, 'edit'])
             ->middleware('permission:tenant-manage-settings')

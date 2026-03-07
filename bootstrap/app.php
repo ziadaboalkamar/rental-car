@@ -27,8 +27,11 @@ return Application::configure(basePath: dirname(__DIR__))
             return route('login');
         });
 
-        $middleware->web(append: [
+        $middleware->web(prepend: [
             \App\Http\Middleware\IdentifyTenant::class,
+        ]);
+
+        $middleware->web(append: [
             \App\Http\Middleware\SetLocale::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,

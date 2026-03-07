@@ -46,11 +46,73 @@ class HandleInertiaRequests extends Middleware
             'quote' => ['message' => trim($message), 'author' => trim($author)],
             'locale' => app()->getLocale(),
             'direction' => LaravelLocalization::getCurrentLocaleDirection(),
-            'available_locales' => LaravelLocalization::getSupportedLanguagesKeys(),
-            'translations' => __('site'),
+            'available_locales' => function () {
+                $supported = LaravelLocalization::getSupportedLanguagesKeys();
+                $tenant = \App\Core\TenantContext::get();
+
+                if (!$tenant) {
+                    return $supported;
+                }
+
+                $tenant->loadMissing('siteSetting');
+                $enabled = $tenant->siteSetting?->enabled_locales;
+
+                if (!is_array($enabled) || empty($enabled)) {
+                    return $supported;
+                }
+
+                $filtered = array_values(array_intersect($supported, array_map('strval', $enabled)));
+
+                return empty($filtered) ? $supported : $filtered;
+            },
+            'translations' => function () {
+                $base = __('site');
+                $tenant = \App\Core\TenantContext::get();
+
+                if (!$tenant) {
+                    return $base;
+                }
+
+                $tenant->loadMissing('siteSetting');
+                $locale = app()->getLocale();
+                $overrides = data_get($tenant->siteSetting?->translations, $locale);
+
+                if (!is_array($overrides) || empty($overrides)) {
+                    return $base;
+                }
+
+                return array_replace_recursive($base, $overrides);
+            },
             'auth' => [
                 'user' => $request->user()?->load('roles.permissions'),
                 'permissions' => $request->user()?->allPermissions()->pluck('name') ?? [],
+                'notifications_unread_count' => $request->user()?->unreadNotifications()->count() ?? 0,
+                'notifications' => function () use ($request) {
+                    $user = $request->user();
+                    if (!$user) {
+                        return [];
+                    }
+
+                    return $user->notifications()
+                        ->latest()
+                        ->limit(10)
+                        ->get()
+                        ->map(function ($notification) {
+                            $data = is_array($notification->data) ? $notification->data : [];
+
+                            return [
+                                'id' => (string) $notification->id,
+                                'kind' => (string) ($data['kind'] ?? 'generic'),
+                                'title' => (string) ($data['title'] ?? 'Notification'),
+                                'message' => (string) ($data['message'] ?? ''),
+                                'url' => (string) ($data['url'] ?? ''),
+                                'read_at' => optional($notification->read_at)?->toDateTimeString(),
+                                'created_at' => optional($notification->created_at)?->toDateTimeString(),
+                            ];
+                        })
+                        ->values()
+                        ->all();
+                },
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'csrf_token' => csrf_token(),

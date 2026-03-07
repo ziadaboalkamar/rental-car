@@ -33,15 +33,24 @@ const $page = usePage<any>();
 const { t } = useTrans();
 const car = computed<Car>(() => $page.props.car as Car);
 const currentTenant = computed(() => $page.props.current_tenant);
+const tenantSiteSettings = computed(() => $page.props.tenant_site_settings ?? null);
+const hasCoupons = computed(() => Boolean($page.props.hasCoupons));
 
 const form = useForm({
     start_date: '',
     end_date: '',
     pickup_location: '',
     return_location: '',
+    coupon_code: '',
 });
 
 const showAvailabilityDialog = ref(false);
+const couponApplying = ref(false);
+const couponMessage = ref('');
+const autoDiscount = ref(0);
+const autoDiscountName = ref('');
+const couponDiscount = ref(0);
+const couponAppliedCode = ref('');
 
 const availabilityErrorMessage = computed(() => {
     return form.errors.start_date || form.errors.end_date || '';
@@ -60,12 +69,25 @@ const subtotal = computed(() => {
     return rentalDays.value * parseFloat(car.value.price_per_day);
 });
 
+const taxPercentage = computed(() => {
+    const raw = Number(tenantSiteSettings.value?.tax_percentage ?? 7);
+    if (!Number.isFinite(raw)) return 7;
+    return Math.min(100, Math.max(0, raw));
+});
+
+const formattedTaxPercentage = computed(() => {
+    const value = taxPercentage.value;
+    return Number.isInteger(value) ? value.toString() : value.toFixed(2).replace(/\.?0+$/, '');
+});
+
+const showTax = computed(() => taxPercentage.value > 0);
+
 const tax = computed(() => {
-    return subtotal.value * 0.07; // 7% tax
+    return subtotal.value * (taxPercentage.value / 100);
 });
 
 const total = computed(() => {
-    return subtotal.value + tax.value;
+    return Math.max(0, subtotal.value + tax.value - autoDiscount.value - couponDiscount.value);
 });
 
 const canSubmit = computed(() => {
@@ -103,6 +125,86 @@ const submitBooking = () => {
     alert(t('booking.alert_role_not_allowed'));
 };
 
+const clearCouponPreview = () => {
+    couponDiscount.value = 0;
+    couponMessage.value = '';
+    couponAppliedCode.value = '';
+};
+
+const clearAutoPreview = () => {
+    autoDiscount.value = 0;
+    autoDiscountName.value = '';
+};
+
+const requestPricingPreview = async (couponCode = '') => {
+    if (!form.start_date || !form.end_date) {
+        clearAutoPreview();
+        if (!couponCode) {
+            clearCouponPreview();
+        }
+        return null;
+    }
+
+    const token = (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content || '';
+    const response = await fetch($page.props.couponPreviewUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'X-CSRF-TOKEN': token,
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        body: JSON.stringify({
+            start_date: form.start_date,
+            end_date: form.end_date,
+            coupon_code: couponCode || undefined,
+        }),
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data?.ok) {
+        throw new Error(data?.message || 'Could not calculate pricing.');
+    }
+
+    autoDiscount.value = Number(data.amounts?.auto_discount_amount || 0);
+    autoDiscountName.value = String(data.auto_discount?.name || '');
+
+    return data;
+};
+
+const applyCoupon = async () => {
+    if (!form.coupon_code) {
+        form.setError('coupon_code', 'Please enter coupon code.');
+        return;
+    }
+
+    if (!form.start_date || !form.end_date) {
+        form.setError('coupon_code', 'Please select rental dates first.');
+        return;
+    }
+
+    couponApplying.value = true;
+    couponMessage.value = '';
+    form.clearErrors('coupon_code');
+
+    try {
+        const data = await requestPricingPreview(form.coupon_code);
+        couponDiscount.value = Number(data?.amounts?.coupon_discount_amount || 0);
+        couponAppliedCode.value = String(data?.coupon?.code || form.coupon_code);
+        couponMessage.value = `Coupon applied: -$${couponDiscount.value.toFixed(2)}`;
+    } catch (error: any) {
+        clearCouponPreview();
+        form.setError('coupon_code', error?.message || 'Coupon is invalid.');
+        try {
+            await requestPricingPreview('');
+        } catch {
+            // ignore refresh errors
+        }
+    } finally {
+        couponApplying.value = false;
+    }
+};
+
 
 // Auto-populate return location when pickup is selected
 watch(
@@ -110,6 +212,48 @@ watch(
     (newLocation) => {
         if (newLocation && !form.return_location) {
             form.return_location = newLocation;
+        }
+    },
+);
+
+watch(
+    () => [form.start_date, form.end_date],
+    async () => {
+        if (!form.start_date || !form.end_date) {
+            clearAutoPreview();
+            clearCouponPreview();
+            return;
+        }
+
+        try {
+            if (couponAppliedCode.value) {
+                const data = await requestPricingPreview(couponAppliedCode.value);
+                couponDiscount.value = Number(data?.amounts?.coupon_discount_amount || 0);
+                couponMessage.value = `Coupon applied: -$${couponDiscount.value.toFixed(2)}`;
+                return;
+            }
+
+            await requestPricingPreview('');
+        } catch {
+            clearAutoPreview();
+            if (couponAppliedCode.value) {
+                clearCouponPreview();
+                form.setError('coupon_code', 'Coupon no longer valid for selected dates.');
+            }
+        }
+    },
+);
+
+watch(
+    () => form.coupon_code,
+    async (value) => {
+        if (couponAppliedCode.value && value.toUpperCase() !== couponAppliedCode.value.toUpperCase()) {
+            clearCouponPreview();
+            try {
+                await requestPricingPreview('');
+            } catch {
+                clearAutoPreview();
+            }
         }
     },
 );
@@ -513,6 +657,56 @@ const commonLocations = computed(() => [
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- Coupon -->
+                                <div v-if="hasCoupons" class="space-y-4">
+                                    <h4
+                                        class="flex items-center text-lg font-semibold text-gray-900"
+                                    >
+                                        <svg
+                                            class="mr-2 h-5 w-5 text-orange-500"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path
+                                                stroke-linecap="round"
+                                                stroke-linejoin="round"
+                                                stroke-width="2"
+                                                d="M9 14l6-6m-5.5 0h.01m4.99 9h.01M7 19h10a2 2 0 002-2v-4a2 2 0 00-2-2h-2l-2-2H7a2 2 0 00-2 2v6a2 2 0 002 2z"
+                                            />
+                                        </svg>
+                                        Coupon Code
+                                    </h4>
+                                    <div class="flex flex-col gap-3 md:flex-row">
+                                        <input
+                                            v-model="form.coupon_code"
+                                            type="text"
+                                            placeholder="e.g. SAVE10"
+                                            class="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-lg uppercase transition-all duration-200 focus:border-orange-500 focus:ring-2 focus:ring-orange-500"
+                                        />
+                                        <button
+                                            type="button"
+                                            class="rounded-xl bg-gray-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-gray-800 disabled:opacity-60"
+                                            :disabled="couponApplying"
+                                            @click="applyCoupon"
+                                        >
+                                            {{ couponApplying ? 'Applying...' : 'Apply Coupon' }}
+                                        </button>
+                                    </div>
+                                    <span
+                                        v-if="form.errors.coupon_code"
+                                        class="text-sm font-medium text-red-500"
+                                    >
+                                        {{ form.errors.coupon_code }}
+                                    </span>
+                                    <span
+                                        v-else-if="couponMessage"
+                                        class="text-sm font-medium text-emerald-600"
+                                    >
+                                        {{ couponMessage }}
+                                    </span>
+                                </div>
                             </form>
                         </div>
                     </div>
@@ -600,10 +794,11 @@ const commonLocations = computed(() => [
                                     </div>
 
                                     <div
+                                        v-if="showTax"
                                         class="flex items-center justify-between py-2"
                                     >
                                         <span class="font-medium text-gray-600"
-                                            >{{ t('booking.tax') }}</span
+                                            >Tax ({{ formattedTaxPercentage }}%)</span
                                         >
                                         <span
                                             class="text-lg font-bold text-gray-900"
@@ -611,6 +806,40 @@ const commonLocations = computed(() => [
                                             ${{
                                                 rentalDays > 0
                                                     ? tax.toFixed(2)
+                                                    : '0.00'
+                                            }}
+                                        </span>
+                                    </div>
+
+                                    <div
+                                        class="flex items-center justify-between py-2"
+                                    >
+                                        <span class="font-medium text-gray-600">
+                                            Auto Discount
+                                            <span v-if="autoDiscountName" class="text-xs text-gray-500">({{ autoDiscountName }})</span>
+                                        </span>
+                                        <span
+                                            class="text-lg font-bold text-emerald-600"
+                                        >
+                                            -${{
+                                                rentalDays > 0
+                                                    ? autoDiscount.toFixed(2)
+                                                    : '0.00'
+                                            }}
+                                        </span>
+                                    </div>
+
+                                    <div
+                                        v-if="hasCoupons"
+                                        class="flex items-center justify-between py-2"
+                                    >
+                                        <span class="font-medium text-gray-600">Coupon Discount</span>
+                                        <span
+                                            class="text-lg font-bold text-emerald-600"
+                                        >
+                                            -${{
+                                                rentalDays > 0
+                                                    ? couponDiscount.toFixed(2)
                                                     : '0.00'
                                             }}
                                         </span>

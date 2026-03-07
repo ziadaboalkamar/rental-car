@@ -86,7 +86,6 @@ class LandingSettingsController extends Controller
             'ai_provider.google_document_ai.project_id' => ['nullable', 'string', 'max:255'],
             'ai_provider.google_document_ai.location' => ['nullable', 'string', 'max:255'],
             'ai_provider.google_document_ai.processor_id' => ['nullable', 'string', 'max:255'],
-            'ai_provider.google_document_ai.service_account_json' => ['nullable', 'string', 'max:100000'],
         ]);
 
         $normalized = LandingPageSettings::normalize($validated['settings'] ?? []);

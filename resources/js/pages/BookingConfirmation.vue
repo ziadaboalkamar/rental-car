@@ -4,6 +4,7 @@ import HomeLayout from '@/layouts/HomeLayout.vue';
 import { usePage } from '@inertiajs/vue3';
 import { fleet } from '@/routes/tenant';
 import { index as reservationsIndex } from '@/routes/client/reservations';
+import { computed } from 'vue';
 
 interface Reservation {
     id: number;
@@ -15,6 +16,11 @@ interface Reservation {
     driver_license: string;
     phone: string;
     additional_notes?: string;
+    subtotal?: string | number;
+    tax_amount?: string | number;
+    discount_amount?: string | number;
+    auto_discount_amount?: string | number;
+    coupon_code?: string | null;
     total_amount: string;
     status: string;
     created_at: string;
@@ -44,6 +50,34 @@ const $page = usePage<PageProps>();
 const { t, locale } = useTrans();
 const reservation = $page.props.reservation;
 const currentTenant = $page.props.current_tenant;
+
+function toAmount(value: unknown): number {
+    const parsed = Number(value ?? 0);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatMoney(value: number): string {
+    return `$${value.toFixed(2)}`;
+}
+
+const amounts = computed(() => {
+    const subtotal = toAmount(reservation.subtotal);
+    const tax = toAmount(reservation.tax_amount);
+    const total = toAmount(reservation.total_amount);
+    const autoDiscount = Math.max(0, toAmount(reservation.auto_discount_amount));
+    const totalDiscount = Math.max(0, toAmount(reservation.discount_amount));
+    const couponDiscount = Math.max(0, totalDiscount - autoDiscount);
+
+    return {
+        subtotal,
+        tax,
+        total,
+        autoDiscount,
+        totalDiscount,
+        couponDiscount,
+        couponCode: (reservation.coupon_code ?? '').trim(),
+    };
+});
 </script>
 
 <template>
@@ -217,6 +251,32 @@ const currentTenant = $page.props.current_tenant;
                                         {{ reservation.status }}
                                     </span>
                                 </div>
+                                <div class="border-t pt-3 space-y-2">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">{{ t('booking.subtotal') }}:</span>
+                                        <span class="font-medium text-gray-900">{{ formatMoney(amounts.subtotal) }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-600">{{ t('booking.tax') }}:</span>
+                                        <span class="font-medium text-gray-900">{{ formatMoney(amounts.tax) }}</span>
+                                    </div>
+                                    <div v-if="amounts.autoDiscount > 0" class="flex items-center justify-between">
+                                        <span class="text-gray-600">Auto Discount:</span>
+                                        <span class="font-medium text-emerald-700">-{{ formatMoney(amounts.autoDiscount) }}</span>
+                                    </div>
+                                    <div v-if="amounts.couponDiscount > 0" class="flex items-center justify-between">
+                                        <span class="text-gray-600">
+                                            Coupon Discount
+                                            <span v-if="amounts.couponCode" class="text-xs text-gray-500">({{ amounts.couponCode }})</span>
+                                            :
+                                        </span>
+                                        <span class="font-medium text-emerald-700">-{{ formatMoney(amounts.couponDiscount) }}</span>
+                                    </div>
+                                    <div v-if="amounts.totalDiscount > 0" class="flex items-center justify-between">
+                                        <span class="text-gray-600">Total Discount:</span>
+                                        <span class="font-medium text-emerald-700">-{{ formatMoney(amounts.totalDiscount) }}</span>
+                                    </div>
+                                </div>
                                 <div class="border-t pt-3">
                                     <div
                                         class="flex items-center justify-between"
@@ -228,11 +288,7 @@ const currentTenant = $page.props.current_tenant;
                                         <span
                                             class="text-2xl font-bold text-orange-500"
                                         >
-                                            ${{
-                                                parseFloat(
-                                                    reservation.total_amount,
-                                                ).toFixed(2)
-                                            }}
+                                            {{ formatMoney(amounts.total) }}
                                         </span>
                                     </div>
                                 </div>

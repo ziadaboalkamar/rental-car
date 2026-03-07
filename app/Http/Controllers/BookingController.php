@@ -4,10 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Core\TenantContext;
 use App\Enums\CarStatus;
+use App\Enums\CouponType;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentStatus;
 use App\Enums\ReservationStatus;
 use App\Models\Car;
+use App\Models\CarDiscount;
+use App\Models\Coupon;
+use App\Models\CouponRedemption;
 use App\Models\Payment;
 use App\Models\PaymentProvider;
 use App\Models\Reservation;
@@ -15,8 +19,10 @@ use App\Models\Tenant;
 use App\Support\Payments\MyFatoorahSubscriptionProvider;
 use App\Support\TenantStripeConnect;
 use Carbon\Carbon;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Throwable;
@@ -26,13 +32,123 @@ class BookingController extends Controller
     public function show(Car $car)
     {
         $tenantSlug = $this->tenantSlug();
+        $tenantId = TenantContext::id();
 
         // Check if car is available for booking
         if ($car->status !== CarStatus::AVAILABLE) {
             return redirect()->route('tenant.fleet', ['subdomain' => $tenantSlug])->with('error', 'This car is not available for booking.');
         }
 
-        return inertia('Booking', compact('car'));
+        $now = now();
+        $hasCoupons = Coupon::query()
+            ->where('tenant_id', $tenantId)
+            ->where('car_id', $car->id)
+            ->where('is_active', true)
+            ->where(function ($query) use ($now) {
+                $query->whereNull('starts_at')
+                    ->orWhere('starts_at', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->whereNull('ends_at')
+                    ->orWhere('ends_at', '>=', $now);
+            })
+            ->where(function ($query) {
+                $query->whereNull('usage_limit')
+                    ->orWhereColumn('used_count', '<', 'usage_limit');
+            })
+            ->exists();
+
+        return inertia('Booking', [
+            'car' => $car,
+            'hasCoupons' => $hasCoupons,
+            'couponPreviewUrl' => route('tenant.fleet.coupon.preview', [
+                'subdomain' => $tenantSlug,
+                'car' => $car->id,
+            ]),
+        ]);
+    }
+
+    public function previewCoupon(Car $car, Request $request): JsonResponse
+    {
+        $request->validate([
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'coupon_code' => 'nullable|string|max:100',
+        ]);
+
+        $tenant = TenantContext::get();
+        if (!$tenant) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Tenant context not found.',
+            ], 422);
+        }
+
+        $startDate = Carbon::parse((string) $request->input('start_date'));
+        $endDate = Carbon::parse((string) $request->input('end_date'));
+        $pricing = $this->calculateBookingTotals($car, $startDate, $endDate, $tenant);
+        $subtotal = (float) $pricing['subtotal'];
+        $taxAmount = (float) $pricing['tax_amount'];
+
+        [$autoDiscount, $autoDiscountAmount] = $this->resolveAutoDiscountForBooking(
+            $tenant,
+            $car,
+            $startDate,
+            $endDate,
+            $subtotal
+        );
+
+        $coupon = null;
+        $couponError = null;
+        $couponDiscount = 0.0;
+        $couponCode = strtoupper(trim((string) $request->input('coupon_code', '')));
+        if ($couponCode !== '') {
+            [$coupon, $couponError] = $this->resolveCouponForBooking(
+                $tenant,
+                $car,
+                $couponCode,
+                $startDate,
+                $endDate,
+                max(0, $subtotal - $autoDiscountAmount)
+            );
+
+            if (!$coupon) {
+                return response()->json([
+                    'ok' => false,
+                    'message' => $couponError ?: 'Invalid coupon code.',
+                ], 422);
+            }
+
+            $couponDiscount = $this->calculateCouponDiscount($coupon, max(0, $subtotal - $autoDiscountAmount));
+        }
+
+        $totalDiscount = min($subtotal, $autoDiscountAmount + $couponDiscount);
+        $totalBeforeDiscount = $subtotal + $taxAmount;
+        $totalAfterDiscount = max(0, $totalBeforeDiscount - $totalDiscount);
+
+        return response()->json([
+            'ok' => true,
+            'coupon' => $coupon ? [
+                'id' => $coupon->id,
+                'code' => $coupon->code,
+                'name' => $coupon->name,
+            ] : null,
+            'auto_discount' => $autoDiscount ? [
+                'id' => $autoDiscount->id,
+                'name' => $autoDiscount->name,
+            ] : null,
+            'amounts' => [
+                'days' => $pricing['days'],
+                'daily_rate' => $pricing['daily_rate'],
+                'subtotal' => $subtotal,
+                'tax_amount' => $taxAmount,
+                'auto_discount_amount' => $autoDiscountAmount,
+                'coupon_discount_amount' => $couponDiscount,
+                'discount_amount' => $totalDiscount,
+                'total_before_discount' => $totalBeforeDiscount,
+                'total_after_discount' => $totalAfterDiscount,
+            ],
+        ]);
     }
 
     public function book(Car $car, Request $request, TenantStripeConnect $stripeConnect)
@@ -56,6 +172,7 @@ class BookingController extends Controller
             'end_date'         => 'required|date|after_or_equal:start_date',
             'pickup_location'  => 'required|string|max:255',
             'return_location'  => 'required|string|max:255',
+            'coupon_code'      => 'nullable|string|max:100',
         ]);
 
         // convert dates to Carbon
@@ -85,65 +202,158 @@ class BookingController extends Controller
                 ]);
         }
 
-        // calculate days (always at least 1)
-        $days = max(1, $startDate->diffInDays($endDate));
+        $pricing = $this->calculateBookingTotals($car, $startDate, $endDate, $tenant);
+        $subtotal = (float) $pricing['subtotal'];
+        $taxAmount = (float) $pricing['tax_amount'];
+        $days = (int) $pricing['days'];
+        $dailyRate = (float) $pricing['daily_rate'];
+        $autoDiscount = null;
+        $autoDiscountAmount = 0.0;
+        $coupon = null;
+        $couponDiscountAmount = 0.0;
+        $discount = 0.0;
 
-        // ensure daily rate is positive
-        $dailyRate = abs($car->price_per_day);
-
-        // calculations
-        $subtotal   = $dailyRate * $days;
-        $taxRate    = 0.07;
-        $taxAmount  = $subtotal * $taxRate;
-        $discount   = 0;
-        $total      = $subtotal + $taxAmount - $discount;
-
-        // create reservation
-        $reservation = Reservation::create([
-            'car_id'          => $car->id,
-            'user_id'         => Auth::id(),
-            'start_date'      => $startDate,
-            'end_date'        => $endDate,
-            'pickup_location' => $request->pickup_location,
-            'return_location' => $request->return_location,
-            'total_days'      => $days,
-            'daily_rate'      => $dailyRate,
-            'subtotal'        => $subtotal,
-            'tax_amount'      => $taxAmount,
-            'discount_amount' => $discount,
-            'total_amount'    => $total,
-        ]);
-
-        $payment = Payment::firstOrCreate(
-            [
-                'reservation_id' => $reservation->id,
-                'user_id' => Auth::id(),
-            ],
-            [
-                'tenant_id' => TenantContext::id(),
-                'amount' => $total,
-                'currency' => $this->bookingCurrency(),
-                'payment_method' => $this->mapBookingProviderToPaymentMethod($this->resolveTenantBookingProvider($tenant, $stripeConnect)),
-                'status' => PaymentStatus::PENDING,
-                'notes' => 'Booking checkout initiated',
-                'gateway_data' => [
-                    'provider_code' => $this->resolveTenantBookingProvider($tenant, $stripeConnect),
-                ],
-            ]
-        );
-
-        if (!$payment->wasRecentlyCreated) {
-            $providerCode = $this->resolveTenantBookingProvider($tenant, $stripeConnect);
-            $payment->forceFill([
-                'tenant_id' => TenantContext::id(),
-                'payment_method' => $this->mapBookingProviderToPaymentMethod($providerCode),
-                'gateway_data' => array_merge((array) $payment->gateway_data, [
-                    'provider_code' => $providerCode,
-                ]),
-            ])->save();
+        if ($tenant) {
+            [$autoDiscount, $autoDiscountAmount] = $this->resolveAutoDiscountForBooking(
+                $tenant,
+                $car,
+                $startDate,
+                $endDate,
+                $subtotal
+            );
         }
 
-        if ($this->resolveTenantBookingProvider($tenant, $stripeConnect)) {
+        $couponCode = strtoupper(trim((string) $request->input('coupon_code', '')));
+        if ($couponCode !== '') {
+            if (!$tenant) {
+                return back()->withInput()->withErrors([
+                    'coupon_code' => 'Coupon cannot be validated for this tenant.',
+                ]);
+            }
+
+            [$coupon, $couponError] = $this->resolveCouponForBooking(
+                $tenant,
+                $car,
+                $couponCode,
+                $startDate,
+                $endDate,
+                max(0, $subtotal - $autoDiscountAmount)
+            );
+            if (!$coupon) {
+                return back()->withInput()->withErrors([
+                    'coupon_code' => $couponError ?: 'Invalid coupon code.',
+                ]);
+            }
+
+            $couponDiscountAmount = $this->calculateCouponDiscount($coupon, max(0, $subtotal - $autoDiscountAmount));
+        }
+
+        $discount = min($subtotal, $autoDiscountAmount + $couponDiscountAmount);
+        $total = max(0, $subtotal + $taxAmount - $discount);
+        $providerCode = $this->resolveTenantBookingProvider($tenant, $stripeConnect);
+        $reservation = null;
+        $payment = null;
+
+        DB::transaction(function () use (
+            &$reservation,
+            &$payment,
+            $car,
+            $startDate,
+            $endDate,
+            $request,
+            $days,
+            $dailyRate,
+            $subtotal,
+            $taxAmount,
+            $autoDiscount,
+            $autoDiscountAmount,
+            $couponDiscountAmount,
+            $discount,
+            $total,
+            $coupon,
+            $couponCode,
+            $providerCode
+        ) {
+            $reservation = Reservation::create([
+                'car_id' => $car->id,
+                'user_id' => Auth::id(),
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'pickup_location' => $request->pickup_location,
+                'return_location' => $request->return_location,
+                'total_days' => $days,
+                'daily_rate' => $dailyRate,
+                'subtotal' => $subtotal,
+                'tax_amount' => $taxAmount,
+                'discount_amount' => $discount,
+                'coupon_id' => $coupon?->id,
+                'coupon_code' => $coupon?->code ?? ($couponCode !== '' ? $couponCode : null),
+                'auto_discount_id' => $autoDiscount?->id,
+                'auto_discount_amount' => $autoDiscountAmount,
+                'total_amount' => $total,
+            ]);
+
+            if ($coupon) {
+                CouponRedemption::create([
+                    'tenant_id' => $reservation->tenant_id,
+                    'coupon_id' => $coupon->id,
+                    'reservation_id' => $reservation->id,
+                    'user_id' => Auth::id(),
+                    'code' => $coupon->code,
+                    'discount_amount' => $couponDiscountAmount,
+                    'subtotal_amount' => $subtotal,
+                    'total_before_discount' => $subtotal + $taxAmount,
+                    'total_after_discount' => max(0, $subtotal + $taxAmount - $couponDiscountAmount),
+                    'meta' => [
+                        'car_id' => $car->id,
+                    ],
+                    'redeemed_at' => now(),
+                ]);
+
+                $coupon->increment('used_count');
+            }
+
+            $payment = Payment::firstOrCreate(
+                [
+                    'reservation_id' => $reservation->id,
+                    'user_id' => Auth::id(),
+                ],
+                [
+                    'tenant_id' => TenantContext::id(),
+                    'amount' => $total,
+                    'currency' => $this->bookingCurrency(),
+                    'payment_method' => $this->mapBookingProviderToPaymentMethod($providerCode),
+                    'status' => PaymentStatus::PENDING,
+                    'notes' => 'Booking checkout initiated',
+                    'gateway_data' => [
+                        'provider_code' => $providerCode,
+                        'auto_discount_name' => $autoDiscount?->name,
+                        'auto_discount_amount' => $autoDiscountAmount,
+                        'coupon_code' => $coupon?->code,
+                        'coupon_discount_amount' => $couponDiscountAmount,
+                        'discount_amount' => $discount,
+                    ],
+                ]
+            );
+
+            if (!$payment->wasRecentlyCreated) {
+                $payment->forceFill([
+                    'tenant_id' => TenantContext::id(),
+                    'amount' => $total,
+                    'payment_method' => $this->mapBookingProviderToPaymentMethod($providerCode),
+                    'gateway_data' => array_merge((array) $payment->gateway_data, [
+                        'provider_code' => $providerCode,
+                        'auto_discount_name' => $autoDiscount?->name,
+                        'auto_discount_amount' => $autoDiscountAmount,
+                        'coupon_code' => $coupon?->code,
+                        'coupon_discount_amount' => $couponDiscountAmount,
+                        'discount_amount' => $discount,
+                    ]),
+                ])->save();
+            }
+        });
+
+        if ($providerCode) {
             return redirect()->route('tenant.booking.checkout', [
                 'subdomain' => $tenantSlug,
                 'reservation' => $reservation,
@@ -198,6 +408,10 @@ class BookingController extends Controller
                 'notes' => 'Booking checkout session created',
                 'gateway_data' => [
                     'provider_code' => $this->resolveTenantBookingProvider($tenant, $stripeConnect),
+                    'auto_discount_amount' => (float) $reservation->auto_discount_amount,
+                    'coupon_code' => $reservation->coupon_code,
+                    'coupon_discount_amount' => max(0, (float) $reservation->discount_amount - (float) $reservation->auto_discount_amount),
+                    'discount_amount' => (float) $reservation->discount_amount,
                 ],
             ]);
         }
@@ -856,6 +1070,195 @@ class BookingController extends Controller
             $failed ? 'error' : 'warning',
             (string) (($verification['failure_reason'] ?? null) ?: ($failed ? 'Payment failed.' : 'Payment is not completed yet.'))
         );
+    }
+
+    /**
+     * @return array{days:int,daily_rate:float,subtotal:float,tax_amount:float}
+     */
+    private function calculateBookingTotals(Car $car, Carbon $startDate, Carbon $endDate, ?Tenant $tenant = null): array
+    {
+        $days = max(1, $startDate->diffInDays($endDate));
+        $dailyRate = abs((float) $car->price_per_day);
+        $subtotal = $dailyRate * $days;
+        $taxPercentage = $this->resolveBookingTaxPercentage($tenant);
+        $taxAmount = $subtotal * ($taxPercentage / 100);
+
+        return [
+            'days' => $days,
+            'daily_rate' => $dailyRate,
+            'subtotal' => $subtotal,
+            'tax_amount' => $taxAmount,
+        ];
+    }
+
+    private function resolveBookingTaxPercentage(?Tenant $tenant): float
+    {
+        $tenant = $tenant ?: TenantContext::get();
+        if (!$tenant) {
+            return 7.0;
+        }
+
+        $siteSetting = $tenant->relationLoaded('siteSetting')
+            ? $tenant->siteSetting
+            : $tenant->siteSetting()->first();
+
+        $value = $siteSetting?->tax_percentage;
+        if ($value === null || $value === '') {
+            return 7.0;
+        }
+
+        $number = (float) $value;
+        if (!is_finite($number)) {
+            return 7.0;
+        }
+
+        return max(0, min(100, round($number, 2)));
+    }
+
+    /**
+     * @return array{0:CarDiscount|null,1:float}
+     */
+    private function resolveAutoDiscountForBooking(
+        Tenant $tenant,
+        Car $car,
+        Carbon $startDate,
+        Carbon $endDate,
+        float $subtotal
+    ): array {
+        $days = max(1, $startDate->diffInDays($endDate));
+        $now = now();
+
+        $candidates = CarDiscount::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('is_active', true)
+            ->where(function ($query) use ($car) {
+                $query->whereNull('car_id')->orWhere('car_id', $car->id);
+            })
+            ->where(function ($query) use ($now) {
+                $query->whereNull('starts_at')->orWhere('starts_at', '<=', $now);
+            })
+            ->where(function ($query) use ($now) {
+                $query->whereNull('ends_at')->orWhere('ends_at', '>=', $now);
+            })
+            ->orderByDesc('priority')
+            ->get();
+
+        $bestDiscount = null;
+        $bestAmount = 0.0;
+
+        foreach ($candidates as $candidate) {
+            if ($candidate->min_days && $days < (int) $candidate->min_days) {
+                continue;
+            }
+
+            if ($candidate->min_total_amount !== null && $subtotal < (float) $candidate->min_total_amount) {
+                continue;
+            }
+
+            $amount = $this->calculateAutoDiscountAmount($candidate, $subtotal);
+            if ($amount <= 0) {
+                continue;
+            }
+
+            if ($amount > $bestAmount) {
+                $bestDiscount = $candidate;
+                $bestAmount = $amount;
+            }
+        }
+
+        return [$bestDiscount, $bestAmount];
+    }
+
+    private function calculateAutoDiscountAmount(CarDiscount $discount, float $subtotal): float
+    {
+        $value = (float) $discount->value;
+        $amount = 0.0;
+        $type = $discount->type instanceof CouponType ? $discount->type : CouponType::from((string) $discount->type);
+
+        if ($type === CouponType::PERCENTAGE) {
+            $amount = $subtotal * ($value / 100);
+        } else {
+            $amount = $value;
+        }
+
+        if ($discount->max_discount_amount !== null) {
+            $amount = min($amount, (float) $discount->max_discount_amount);
+        }
+
+        return max(0, min($amount, $subtotal));
+    }
+
+    /**
+     * @return array{0:Coupon|null,1:string|null}
+     */
+    private function resolveCouponForBooking(
+        Tenant $tenant,
+        Car $car,
+        string $inputCode,
+        Carbon $startDate,
+        Carbon $endDate,
+        float $subtotal
+    ): array {
+        $code = strtoupper(trim($inputCode));
+        if ($code === '') {
+            return [null, null];
+        }
+
+        /** @var Coupon|null $coupon */
+        $coupon = Coupon::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('code', $code)
+            ->where('is_active', true)
+            ->where(function ($query) use ($car) {
+                $query->whereNull('car_id')->orWhere('car_id', $car->id);
+            })
+            ->first();
+
+        if (!$coupon) {
+            return [null, 'Coupon code is invalid or not allowed for this car.'];
+        }
+
+        $now = now();
+        if ($coupon->starts_at && $coupon->starts_at->gt($now)) {
+            return [null, 'Coupon is not active yet.'];
+        }
+
+        if ($coupon->ends_at && $coupon->ends_at->lt($now)) {
+            return [null, 'Coupon has expired.'];
+        }
+
+        $days = max(1, $startDate->diffInDays($endDate));
+        if ($coupon->min_days && $days < (int) $coupon->min_days) {
+            return [null, "Coupon requires at least {$coupon->min_days} rental days."];
+        }
+
+        if ($coupon->min_total_amount !== null && $subtotal < (float) $coupon->min_total_amount) {
+            return [null, 'Coupon minimum order amount is not reached.'];
+        }
+
+        if ($coupon->usage_limit !== null && (int) $coupon->used_count >= (int) $coupon->usage_limit) {
+            return [null, 'Coupon usage limit reached.'];
+        }
+
+        return [$coupon, null];
+    }
+
+    private function calculateCouponDiscount(Coupon $coupon, float $subtotal): float
+    {
+        $discount = 0.0;
+        $type = $coupon->type instanceof CouponType ? $coupon->type : CouponType::from((string) $coupon->type);
+
+        if ($type === CouponType::PERCENTAGE) {
+            $discount = $subtotal * (((float) $coupon->value) / 100);
+        } else {
+            $discount = (float) $coupon->value;
+        }
+
+        if ($coupon->max_discount_amount !== null) {
+            $discount = min($discount, (float) $coupon->max_discount_amount);
+        }
+
+        return max(0, min($discount, $subtotal));
     }
 
     private function bookingCurrency(?string $tenantCurrency = null): string

@@ -11,8 +11,12 @@ use App\Http\Controllers\SuperAdmin\DiscountsController;
 use App\Http\Controllers\SuperAdmin\CarsController;
 use App\Http\Controllers\SuperAdmin\ReservationsController;
 use App\Http\Controllers\SuperAdmin\LandingSettingsController;
+use App\Http\Controllers\SuperAdmin\LoginSettingsController;
 use App\Http\Controllers\SuperAdmin\RevenueSubscriptionController;
+use App\Http\Controllers\SuperAdmin\RevenueTransactionsController;
 use App\Http\Controllers\SuperAdmin\PaymentProvidersController;
+use App\Http\Controllers\SuperAdmin\LocalizationSettingsController;
+use App\Http\Controllers\SuperAdmin\SupportController as SuperAdminSupportController;
 
 use App\Http\Controllers\SuperAdmin\Auth\LoginController;
 use App\Http\Controllers\SuperAdmin\LogViewerController;
@@ -38,11 +42,19 @@ Route::middleware(['auth', 'verified', 'active', 'super_admin'])
 
         // Tenants Management
         Route::middleware('permission:manage-tenants')->resource('tenants', TenantsController::class);
+        Route::middleware('permission:manage-tenants')->group(function () {
+            Route::get('support/tenants', [SuperAdminSupportController::class, 'index'])->name('support.tenants.index');
+            Route::get('support/tenants/{ticket}', [SuperAdminSupportController::class, 'show'])->name('support.tenants.show');
+            Route::post('support/tenants/{ticket}/reply', [SuperAdminSupportController::class, 'reply'])->name('support.tenants.reply');
+            Route::post('support/tenants/{ticket}/close', [SuperAdminSupportController::class, 'close'])->name('support.tenants.close');
+        });
 
         // Revenue
         Route::middleware('permission:manage-revenue')->group(function () {
             Route::get('revenue/subscription', [RevenueSubscriptionController::class, 'index'])->name('revenue.subscription');
-            Route::get('revenue/transactions', [PlaceholderController::class, 'transactions'])->name('revenue.transactions');
+            Route::get('revenue/transactions', [RevenueTransactionsController::class, 'index'])->name('revenue.transactions');
+            Route::get('revenue/transactions/export/csv', [RevenueTransactionsController::class, 'exportCsv'])->name('revenue.transactions.export.csv');
+            Route::get('revenue/transactions/export/pdf', [RevenueTransactionsController::class, 'exportPdf'])->name('revenue.transactions.export.pdf');
         });
 
         // User Management (Super Admin users: can log in to super admin area)
@@ -79,6 +91,10 @@ Route::middleware(['auth', 'verified', 'active', 'super_admin'])
             Route::get('settings/general', [LandingSettingsController::class, 'edit'])->name('settings.general');
             Route::put('settings/general', [LandingSettingsController::class, 'update'])->name('settings.general.update');
             Route::post('settings/general/test-ai-connection', [LandingSettingsController::class, 'testAiConnection'])->name('settings.general.test-ai-connection');
+            
+            Route::get('settings/login', [LoginSettingsController::class, 'edit'])->name('settings.login');
+            Route::put('settings/login', [LoginSettingsController::class, 'update'])->name('settings.login.update');
+
             Route::redirect('settings/stripe', 'settings/payment-providers', 302)->name('settings.stripe');
             Route::put('settings/stripe', function () {
                 return redirect()
@@ -87,5 +103,7 @@ Route::middleware(['auth', 'verified', 'active', 'super_admin'])
             })->name('settings.stripe.update');
             Route::get('settings/payment-providers', [PaymentProvidersController::class, 'index'])->name('settings.payment-providers');
             Route::put('settings/payment-providers/{paymentProvider}', [PaymentProvidersController::class, 'update'])->name('settings.payment-providers.update');
+            Route::get('settings/languages', [LocalizationSettingsController::class, 'edit'])->name('settings.languages');
+            Route::put('settings/languages', [LocalizationSettingsController::class, 'update'])->name('settings.languages.update');
         });
     });

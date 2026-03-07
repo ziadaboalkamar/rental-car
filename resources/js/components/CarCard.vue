@@ -2,7 +2,6 @@
 import { useTrans } from '@/composables/useTrans';
 import { usePage } from '@inertiajs/vue3';
 import { router } from '@inertiajs/vue3';
-import { show } from '@/routes/tenant/fleet';
 
 interface Car {
     id: number;
@@ -21,15 +20,28 @@ interface Props {
 
 const page = usePage<any>();
 const { t } = useTrans();
+
+const currentLocalePrefix = (): string => {
+    const locale = String(page.props.locale || '').trim();
+    if (!locale) {
+        return '';
+    }
+
+    const pathname = window.location.pathname;
+    const prefixed = `/${locale}`;
+    return pathname === prefixed || pathname.startsWith(`${prefixed}/`) ? prefixed : '';
+};
+
 const bookCar = (carId: number) => {
     const slug = page.props.current_tenant?.slug;
+    const localePrefix = currentLocalePrefix();
 
     if (!slug) {
-        router.get('/fleet');
+        router.get(`${localePrefix}/fleet` || '/fleet');
         return;
     }
 
-    router.get(show({ subdomain: slug, car: carId }).url);
+    router.get(`${localePrefix}/fleet/${carId}`);
 };
 
 defineProps<Props>();

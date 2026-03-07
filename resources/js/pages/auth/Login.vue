@@ -313,6 +313,38 @@ const isDemoOpen = ref(false);
                             </p>
                         </div>
                     </Form>
+
+                    <template v-if="currentTenant">
+                        <div class="relative flex items-center py-6">
+                            <div class="flex-grow border-t border-gray-200"></div>
+                            <span class="flex-shrink-0 px-4 text-xs font-medium text-gray-500 uppercase">Or continue with</span>
+                            <div class="flex-grow border-t border-gray-200"></div>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <a
+                                :href="`http://${page.props.app_url_base}/auth/google/redirect?tenant=${currentTenant.slug}`"
+                                class="flex h-11 items-center justify-center rounded-lg border border-gray-300 bg-white font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
+                            >
+                                <svg class="mr-2 h-5 w-5" viewBox="0 0 24 24">
+                                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                                </svg>
+                                Google
+                            </a>
+                            <a
+                                :href="`http://${page.props.app_url_base}/auth/apple/redirect?tenant=${currentTenant.slug}`"
+                                class="flex h-11 items-center justify-center rounded-lg border border-gray-300 bg-black font-semibold text-white shadow-sm transition hover:bg-gray-800"
+                            >
+                                <svg class="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                                    <path d="M16.365 21.492c-1.373.91-2.073.932-3.418.932-1.36 0-2.457-.145-3.358-.888-4.706-3.896-7.143-12.001-2.924-17.159C8.381 2.27 10.64 1 12.87 1c1.372 0 2.515.548 3.518.548 1.033 0 2.455-.662 4.098-.598 2.053.082 3.868.868 4.908 2.39-4.226 2.593-3.483 8.653.861 10.4-1.127 3.238-3.085 6.425-5.61 8.8-1.026.969-2.19 1.496-3.235 1.496a7.41 7.41 0 0 1-1.045-.544zM16.124 6.78c-.2-2.14 1.5-4.04 3.79-4.38.38 2.39-1.9 4.31-3.79 4.38z" />
+                                </svg>
+                                Apple
+                            </a>
+                        </div>
+                    </template>
                 </div>
 
                 <!-- Additional Info -->

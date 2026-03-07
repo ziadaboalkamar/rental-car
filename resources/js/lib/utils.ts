@@ -48,7 +48,46 @@ function normalizeUrlPath(url: string): string {
     if (path.length > 1) path = path.replace(/\/+$/, '');
 
     // Treat localized and non-localized paths as the same route for active-link checks.
-    path = path.replace(/^\/(?:en|ar)(?=\/|$)/, '') || '/';
+    const localeSegment = path.split('/')[1];
+    const supportedLocales = getSupportedLocales();
+    if (localeSegment && supportedLocales.includes(localeSegment)) {
+        path = path.replace(new RegExp(`^/${escapeRegExp(localeSegment)}(?=/|$)`), '') || '/';
+    }
 
     return path;
+}
+
+function getSupportedLocales(): string[] {
+    if (typeof window === 'undefined') {
+        return [];
+    }
+
+    const initialPage = (window as { __INITIAL_PAGE__?: any }).__INITIAL_PAGE__;
+    const serializedPage = document.getElementById('app')?.dataset?.page;
+    const parsedPage = safeParseJson(serializedPage);
+    const page = initialPage ?? parsedPage;
+
+    const locales = page?.props?.available_locales;
+    if (Array.isArray(locales)) {
+        return locales.filter((value): value is string => typeof value === 'string' && value.length > 0);
+    }
+
+    if (locales && typeof locales === 'object') {
+        return Object.keys(locales);
+    }
+
+    return [];
+}
+
+function safeParseJson(value: string | undefined): any | null {
+    if (!value) return null;
+    try {
+        return JSON.parse(value);
+    } catch {
+        return null;
+    }
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

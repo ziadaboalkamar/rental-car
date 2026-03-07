@@ -18,7 +18,7 @@ class SupportController extends Controller
 
     public function show($id)
     {
-        $ticket = Ticket::findOrFail($id);
+        $ticket = Ticket::where('user_id', auth()->id())->findOrFail($id);
         $ticket->load('messages');
         return inertia('Client/Support/Show', [
             'ticket' => $ticket,
@@ -39,6 +39,7 @@ class SupportController extends Controller
         
         $ticket = Ticket::create([
             'tenant_id' => auth()->user()->tenant_id,
+            'channel' => 'customer',
             'subject' => $request->subject,
             'user_id' => auth()->user()->id,
         ]);
@@ -53,7 +54,7 @@ class SupportController extends Controller
 
     public function reply($id, Request $request)
     {
-        $ticket = Ticket::findOrFail($id);
+        $ticket = Ticket::where('user_id', auth()->id())->findOrFail($id);
         $ticket->messages()->create([
             'tenant_id' => $ticket->tenant_id,
             'user_id' => auth()->id(),

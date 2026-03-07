@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Auth\TenantAwareUserProvider;
 use App\Core\AiProviderSettings;
+use App\Core\LocalizationSettings;
+use App\Core\SocialLoginSettings;
 use App\Core\StripeSettings;
 use App\Models\SiteSetting;
 use Illuminate\Support\Facades\Auth;
@@ -32,6 +34,8 @@ class AppServiceProvider extends ServiceProvider
 
         $this->applyStripeSettingsFromDatabase();
         $this->applyOpenAiSettingsFromDatabase();
+        $this->applyLocalizationSettingsFromDatabase();
+        $this->applySocialLoginSettingsFromDatabase();
 
         // Register a tenant-aware user provider that ignores tenant scopes during auth lookups.
         Auth::provider('eloquent-tenant-aware', function ($app, array $config) {
@@ -88,6 +92,66 @@ class AppServiceProvider extends ServiceProvider
             ]);
         } catch (Throwable) {
             // Do not block app boot if settings table is not ready yet.
+        }
+    }
+
+    private function applyLocalizationSettingsFromDatabase(): void
+    {
+        try {
+            if (!Schema::hasTable('site_settings')) {
+                return;
+            }
+
+            $settings = LocalizationSettings::load();
+            $supportedLocales = LocalizationSettings::toLaravelLocalizationConfig($settings);
+            $localeCodes = LocalizationSettings::localeCodes($settings);
+            $defaultLocale = LocalizationSettings::defaultLocale($settings);
+
+            config([
+                'laravellocalization.supportedLocales' => $supportedLocales,
+                'laravellocalization.localesOrder' => $localeCodes,
+                'app.available_locales' => $localeCodes,
+                'app.locale' => $defaultLocale,
+            ]);
+        } catch (Throwable) {
+            // Do not block app boot if settings are not ready yet.
+        }
+    }
+
+    private function applySocialLoginSettingsFromDatabase(): void
+    {
+        try {
+            if (!Schema::hasTable('site_settings')) {
+                return;
+            }
+
+            $settings = SocialLoginSettings::load();
+            $google = $settings['google'] ?? [];
+            $apple = $settings['apple'] ?? [];
+
+            $baseDomain = config('app.url');
+
+            if ($google['enabled']) {
+                $googleClientId = ($google['client_id'] ?? '') !== '' ? $google['client_id'] : config('services.google.client_id');
+                $googleClientSecret = ($google['client_secret'] ?? '') !== '' ? $google['client_secret'] : config('services.google.client_secret');
+                config([
+                    'services.google.client_id' => $googleClientId,
+                    'services.google.client_secret' => $googleClientSecret,
+                    'services.google.redirect' => "{$baseDomain}/auth/google/callback",
+                ]);
+            }
+
+            if ($apple['enabled']) {
+                $appleClientId = ($apple['client_id'] ?? '') !== '' ? $apple['client_id'] : config('services.apple.client_id');
+                $appleClientSecret = ($apple['client_secret'] ?? '') !== '' ? $apple['client_secret'] : config('services.apple.client_secret');
+                config([
+                    'services.apple.client_id' => $appleClientId,
+                    'services.apple.client_secret' => $appleClientSecret,
+                    'services.apple.redirect' => "{$baseDomain}/auth/apple/callback",
+                ]);
+            }
+        } catch (Throwable) {
+            // Do not block app boot if settings are not ready yet.
         }
     }
 }

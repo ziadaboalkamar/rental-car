@@ -29,6 +29,7 @@ class TicketSeeder extends Seeder
     {
         // Ticket 1: Booking Issue - NEW
         $ticket1 = Ticket::create([
+            'channel' => 'customer',
             'subject' => 'Unable to complete booking for BMW X5',
             'status' => TicketStatus::NEW,
             'user_id' => $users[0]->id,
@@ -54,6 +55,7 @@ class TicketSeeder extends Seeder
 
         // Ticket 2: Car Damage Report - In Progress
         $ticket2 = Ticket::create([
+            'channel' => 'customer',
             'subject' => 'Minor scratch on returned vehicle - Toyota Camry',
             'status' => TicketStatus::IN_PROGRESS,
             'user_id' => $users[1]->id,
@@ -79,6 +81,7 @@ class TicketSeeder extends Seeder
 
         // Ticket 3: Account Access Issue - CLOSED
         $ticket3 = Ticket::create([
+            'channel' => 'customer',
             'subject' => 'Cannot access my account after password reset',
             'status' => TicketStatus::CLOSED,
             'user_id' => $users[2]->id,
@@ -117,6 +120,7 @@ class TicketSeeder extends Seeder
 
         // Ticket 4: Billing Inquiry - NEW
         $ticket4 = Ticket::create([
+            'channel' => 'customer',
             'subject' => 'Unexpected charge on my credit card',
             'status' => TicketStatus::NEW,
             'user_id' => $users[3]->id,
@@ -130,6 +134,7 @@ class TicketSeeder extends Seeder
 
         // Ticket 5: Vehicle Request - In Progress
         $ticket5 = Ticket::create([
+            'channel' => 'customer',
             'subject' => 'Special vehicle request for wedding',
             'status' => TicketStatus::IN_PROGRESS,
             'user_id' => $users[4]->id,
@@ -158,6 +163,7 @@ class TicketSeeder extends Seeder
     {
         // Guest Ticket 1: General Inquiry - NEW
         $guestTicket1 = Ticket::create([
+            'channel' => 'guest',
             'subject' => 'Group booking inquiry for corporate event',
             'status' => TicketStatus::NEW,
             'guest_name' => 'Sarah Johnson',
@@ -172,6 +178,7 @@ class TicketSeeder extends Seeder
 
         // Guest Ticket 2: Pricing Question - CLOSED
         $guestTicket2 = Ticket::create([
+            'channel' => 'guest',
             'subject' => 'Weekly rates for SUV rental',
             'status' => TicketStatus::CLOSED,
             'guest_name' => 'Mike Rodriguez',
@@ -187,6 +194,7 @@ class TicketSeeder extends Seeder
 
         // Guest Ticket 3: Location Inquiry - NEW
         $guestTicket3 = Ticket::create([
+            'channel' => 'guest',
             'subject' => 'Airport pickup availability',
             'status' => TicketStatus::NEW,
             'guest_name' => 'Emily Chen',
@@ -201,6 +209,7 @@ class TicketSeeder extends Seeder
 
         // Guest Ticket 4: Complaint - In Progress
         $guestTicket4 = Ticket::create([
+            'channel' => 'guest',
             'subject' => 'Poor customer service experience',
             'status' => TicketStatus::IN_PROGRESS,
             'guest_name' => 'Robert Thompson',
@@ -215,6 +224,7 @@ class TicketSeeder extends Seeder
 
         // Guest Ticket 5: Special Requirements - NEW
         $guestTicket5 = Ticket::create([
+            'channel' => 'guest',
             'subject' => 'Wheelchair accessible vehicle needed',
             'status' => TicketStatus::NEW,
             'guest_name' => 'Lisa Martinez',

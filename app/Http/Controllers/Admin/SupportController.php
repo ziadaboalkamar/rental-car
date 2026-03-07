@@ -35,11 +35,13 @@ class SupportController extends Controller
 
         $query = Ticket::query()
             ->when($ticketType === 'customer', function ($q) {
-                $q->whereNotNull('user_id')
+                $q->where('channel', 'customer')
+                  ->whereNotNull('user_id')
                   ->with('user:id,name,email,branch_id')
                   ->with('user.branch:id,name');
             }, function ($q) {
-                $q->whereNull('user_id');
+                $q->where('channel', 'guest')
+                  ->whereNull('user_id');
             })
             ->tap(function ($q) use ($user, $branchId, $ticketType) {
                 $this->applyTicketBranchScope($q, $user, $branchId, $ticketType);
@@ -134,7 +136,7 @@ class SupportController extends Controller
         ]);
 
         // Only allow replies to customer tickets
-        if (is_null($ticket->user_id)) {
+        if ($ticket->channel !== 'customer' || is_null($ticket->user_id)) {
             return back()->with('error', 'Cannot reply to guest tickets');
         }
 
@@ -167,9 +169,9 @@ class SupportController extends Controller
     {
         $query = Ticket::query();
         if ($type === 'customer') {
-            $query->whereNotNull('user_id');
+            $query->where('channel', 'customer')->whereNotNull('user_id');
         } else {
-            $query->whereNull('user_id');
+            $query->where('channel', 'guest')->whereNull('user_id');
         }
         if ($status) {
             $query->where('status', $status);
@@ -210,7 +212,7 @@ class SupportController extends Controller
     {
         $ticket->loadMissing('user:id,branch_id');
 
-        if (is_null($ticket->user_id)) {
+        if ($ticket->channel === 'guest' || is_null($ticket->user_id)) {
             return $this->branchAccess->canAccessAllBranches($user);
         }
 

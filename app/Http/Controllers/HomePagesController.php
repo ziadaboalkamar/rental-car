@@ -156,6 +156,7 @@ class HomePagesController extends Controller
 
         $ticket = Ticket::create([
             'tenant_id' => $tenantId,
+            'channel' => 'guest',
             'guest_name' => $request->name,
             'guest_email' => $request->email,
             'subject' => $request->subject,

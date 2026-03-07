@@ -24,23 +24,35 @@ import { index as contractsIndex } from "@/routes/admin/contracts/index";
 import { type NavItem } from '@/types';
 import { useTrans } from '@/composables/useTrans';
 import { Link, usePage } from '@inertiajs/vue3';
-import { Car, Calendar, User, CreditCard, BarChart, LifeBuoy, MapPin, Users, Shield, FileText } from 'lucide-vue-next';
+import { Car, Calendar, User, CreditCard, BarChart, LifeBuoy, MapPin, Users, Shield, FileText, Wrench, AlertTriangle, Tag, Percent, LayoutDashboard } from 'lucide-vue-next';
 import AppLogo from './AppLogo.vue';
 import { home } from '@/routes';
 import { computed } from 'vue';
 
 const page = usePage<any>();
 const { t } = useTrans();
+const availableLocales = computed<string[]>(() =>
+    Array.isArray(page.props?.available_locales) && page.props.available_locales.length
+        ? page.props.available_locales
+        : ['en']
+);
 const isRtl = computed(() => page.props.direction === 'rtl' || page.props.locale === 'ar');
 const stripLocalePrefix = (path: string) => {
-    const locales = Array.isArray(page.props?.available_locales) ? page.props.available_locales : ['en', 'ar'];
-    const escapedLocales = locales.map((locale: string) => locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const escapedLocales = availableLocales.value.map((locale: string) => locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const localeRegex = new RegExp(`^\\/(?:${escapedLocales.join('|')})(?=\\/|$)`);
 
     return path.replace(localeRegex, '') || '/';
 };
 const isSuperAdmin = computed(() => stripLocalePrefix(String(page.url || '/')).startsWith('/superadmin'));
 const currentTenant = computed(() => page.props.current_tenant);
+const localePrefix = computed(() => {
+    const currentPath = String(page.url || '/');
+    const escapedLocales = availableLocales.value.map((locale) => locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const localeRegex = new RegExp(`^\\/(${escapedLocales.join('|')})(?=\\/|$)`);
+    const match = currentPath.match(localeRegex);
+    return match ? `/${match[1]}` : '';
+});
+const adminHref = (path: string) => `${localePrefix.value}/admin${path}`;
 const authPermissions = computed<string[]>(() =>
     Array.isArray(page.props?.auth?.permissions) ? page.props.auth.permissions : [],
 );
@@ -50,6 +62,11 @@ const mainNavItems = computed<NavItem[]>(() => {
     if (!slug) return [];
 
     return [
+        {
+            title: 'Dashboard',
+            href: adminHref('/dashboard'),
+            icon: LayoutDashboard,
+        },
         {
             title: t('dashboard.sidebar.admin.cars'),
             href: carsIndex(slug).url,
@@ -61,6 +78,24 @@ const mainNavItems = computed<NavItem[]>(() => {
             href: reservationsIndex(slug).url,
             icon: Calendar,
             permission: 'tenant-manage-reservations',
+        },
+        {
+            title: 'Maintenance Types',
+            href: adminHref('/maintenance-types'),
+            icon: Wrench,
+            permission: 'tenant-manage-cars',
+        },
+        {
+            title: 'Maintenance Records',
+            href: adminHref('/maintenance-records'),
+            icon: Wrench,
+            permission: 'tenant-manage-cars',
+        },
+        {
+            title: 'Car Violations',
+            href: adminHref('/car-violations'),
+            icon: AlertTriangle,
+            permission: 'tenant-manage-cars',
         },
         {
             title: 'Contracts',
@@ -81,6 +116,18 @@ const mainNavItems = computed<NavItem[]>(() => {
             permission: 'tenant-manage-payments',
         },
         {
+            title: 'Coupons',
+            href: adminHref('/coupons'),
+            icon: Tag,
+            permission: 'tenant-manage-payments',
+        },
+        {
+            title: 'Auto Discounts',
+            href: adminHref('/car-discounts'),
+            icon: Percent,
+            permission: 'tenant-manage-payments',
+        },
+        {
             title: t('dashboard.sidebar.admin.reports'),
             href: reportsIndex(slug).url,
             icon: BarChart,
@@ -89,6 +136,12 @@ const mainNavItems = computed<NavItem[]>(() => {
         {
             title: t('dashboard.sidebar.admin.support'),
             href: supportIndex(slug).url,
+            icon: LifeBuoy,
+            permission: 'tenant-manage-support',
+        },
+        {
+            title: 'Platform Support',
+            href: adminHref('/support/platform'),
             icon: LifeBuoy,
             permission: 'tenant-manage-support',
         },
@@ -112,13 +165,19 @@ const mainNavItems = computed<NavItem[]>(() => {
         },
         {
             title: 'Payment Providers',
-            href: '/admin/settings/payment-providers',
+            href: adminHref('/settings/payment-providers'),
             icon: CreditCard,
             permission: 'tenant-manage-settings',
         },
         {
             title: 'Website Settings',
-            href: '/admin/settings/website',
+            href: adminHref('/settings/website'),
+            icon: Shield,
+            permission: 'tenant-manage-settings',
+        },
+        {
+            title: 'Translations',
+            href: adminHref('/settings/translations'),
             icon: Shield,
             permission: 'tenant-manage-settings',
         },
