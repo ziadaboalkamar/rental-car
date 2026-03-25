@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use MohamedGaldi\ViltFilepond\Traits\HasFiles;
 
 class Contract extends Model
@@ -55,5 +57,29 @@ class Contract extends Model
     {
         return $this->belongsTo(Branch::class);
     }
-}
 
+    public function drivers(): HasMany
+    {
+        return $this->hasMany(ContractDriver::class);
+    }
+
+    public function primaryDriver(): HasOne
+    {
+        return $this->hasOne(ContractDriver::class)->where('role', 'primary');
+    }
+
+    public function additionalDrivers(): HasMany
+    {
+        return $this->hasMany(ContractDriver::class)->where('role', 'additional');
+    }
+
+    public function damageReports(): HasMany
+    {
+        return $this->hasMany(CarDamageReport::class);
+    }
+
+    public function openedDamageCases(): HasMany
+    {
+        return $this->hasMany(CarDamageCase::class, 'opened_in_contract_id');
+    }
+}

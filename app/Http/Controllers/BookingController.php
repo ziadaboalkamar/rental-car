@@ -29,13 +29,27 @@ use Throwable;
 
 class BookingController extends Controller
 {
-    public function show(Car $car)
+    private function isWebsiteBookableCarStatus(CarStatus $status): bool
+    {
+        return in_array($status, [
+            CarStatus::AVAILABLE,
+            CarStatus::RESERVED,
+            CarStatus::RENTED,
+        ], true);
+    }
+
+    public function show(Request $request, Car $car)
     {
         $tenantSlug = $this->tenantSlug();
         $tenantId = TenantContext::id();
+        $today = now()->startOfDay();
+
+        $request->validate([
+            'window_start' => ['nullable', 'date_format:Y-m-d'],
+        ]);
 
         // Check if car is available for booking
-        if ($car->status !== CarStatus::AVAILABLE) {
+        if (!$this->isWebsiteBookableCarStatus($car->status)) {
             return redirect()->route('tenant.fleet', ['subdomain' => $tenantSlug])->with('error', 'This car is not available for booking.');
         }
 
@@ -58,9 +72,49 @@ class BookingController extends Controller
             })
             ->exists();
 
+        $selectedWindowStart = $request->string('window_start')->toString();
+        $windowStart = $selectedWindowStart !== ''
+            ? Carbon::createFromFormat('Y-m-d', $selectedWindowStart)->startOfDay()
+            : $today->copy();
+        $windowEnd = $windowStart->copy()->addDays(29)->endOfDay();
+
+        $windowMeta = [
+            'starts_at' => $windowStart->toDateString(),
+            'ends_at' => $windowEnd->toDateString(),
+            'label' => sprintf('%s - %s', $windowStart->format('M j, Y'), $windowEnd->format('M j, Y')),
+            'previous' => $windowStart->copy()->subDays(30)->toDateString(),
+            'next' => $windowStart->copy()->addDays(30)->toDateString(),
+        ];
+
+        $blockedRanges = Reservation::query()
+            ->where('car_id', $car->id)
+            ->whereIn('status', [
+                ReservationStatus::PENDING->value,
+                ReservationStatus::CONFIRMED->value,
+                ReservationStatus::ACTIVE->value,
+            ])
+            ->whereDate('start_date', '<=', $windowEnd->toDateString())
+            ->whereDate('end_date', '>=', $windowStart->toDateString())
+            ->orderBy('start_date')
+            ->get(['start_date', 'end_date'])
+            ->map(static function (Reservation $reservation) {
+                return [
+                    'start_date' => optional($reservation->start_date)->toDateString(),
+                    'end_date' => optional($reservation->end_date)->toDateString(),
+                ];
+            })
+            ->values();
+
         return inertia('Booking', [
             'car' => $car,
             'hasCoupons' => $hasCoupons,
+            'availabilityCalendar' => [
+                'window_starts_at' => $windowStart->toDateString(),
+                'window_ends_at' => $windowEnd->toDateString(),
+                'today' => $today->toDateString(),
+                'window' => $windowMeta,
+                'blocked_ranges' => $blockedRanges,
+            ],
             'couponPreviewUrl' => route('tenant.fleet.coupon.preview', [
                 'subdomain' => $tenantSlug,
                 'car' => $car->id,
@@ -157,7 +211,7 @@ class BookingController extends Controller
         $tenant = TenantContext::get();
 
         // check car is available for booking
-        if ($car->status !== CarStatus::AVAILABLE) {
+        if (!$this->isWebsiteBookableCarStatus($car->status)) {
             return redirect()->route('tenant.fleet', ['subdomain' => $tenantSlug])->with('error', 'This car is not available for booking.');
         }
 
@@ -291,6 +345,7 @@ class BookingController extends Controller
                 'auto_discount_id' => $autoDiscount?->id,
                 'auto_discount_amount' => $autoDiscountAmount,
                 'total_amount' => $total,
+                'status' => ReservationStatus::PENDING->value,
             ]);
 
             if ($coupon) {

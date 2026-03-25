@@ -110,6 +110,9 @@ watch(search, (v, ov) => {
         <main class="flex-1 space-y-6 p-8">
             <div class="flex items-center justify-between gap-4">
                 <h1 class="text-2xl font-semibold">{{ t('dashboard.admin.reservations.index.title') }}</h1>
+                <Link v-if="subdomain" href="/admin/reservations/create">
+                    <Button>Create Reservation</Button>
+                </Link>
             </div>
 
             <div class="flex flex-col gap-4">

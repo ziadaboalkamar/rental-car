@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTrans } from '@/composables/useTrans';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
@@ -39,7 +40,10 @@ const props = defineProps<{
 
 const search = ref(props.filters?.search ?? '');
 const status = ref(props.filters?.status ?? 'all');
-const branchId = ref<string>(props.filters?.branch_id ? String(props.filters.branch_id) : 'all');
+const branchId = ref<string>(
+    props.filters?.branch_id ? String(props.filters.branch_id) : 'all',
+);
+const { t } = useTrans();
 
 const submitFilters = () => {
     router.get(
@@ -55,25 +59,39 @@ const submitFilters = () => {
 </script>
 
 <template>
-    <Head title="Contracts" />
+    <Head :title="t('dashboard.admin.contracts.index.head_title')" />
     <AdminLayout>
         <main class="flex-1 space-y-6 p-8">
             <div class="flex items-center justify-between gap-4">
-                <h1 class="text-2xl font-semibold">Contracts</h1>
+                <h1 class="text-2xl font-semibold">
+                    {{ t('dashboard.admin.contracts.index.title') }}
+                </h1>
                 <Link :href="actions.create">
-                    <Button>Create Contract</Button>
+                    <Button>{{
+                        t('dashboard.admin.contracts.index.create_contract')
+                    }}</Button>
                 </Link>
             </div>
 
             <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
-                <Input v-model="search" placeholder="Search by contract/reservation/renter..." @keyup.enter="submitFilters" />
+                <Input
+                    v-model="search"
+                    :placeholder="
+                        t('dashboard.admin.contracts.index.search_placeholder')
+                    "
+                    @keyup.enter="submitFilters"
+                />
                 <select
                     v-model="status"
                     class="rounded-md border border-input bg-transparent px-3 py-2"
                     @change="submitFilters"
                 >
-                    <option value="all">All statuses</option>
-                    <option v-for="item in statuses" :key="item" :value="item">{{ item }}</option>
+                    <option value="all">
+                        {{ t('dashboard.admin.contracts.index.all_statuses') }}
+                    </option>
+                    <option v-for="item in statuses" :key="item" :value="item">
+                        {{ item }}
+                    </option>
                 </select>
 
                 <select
@@ -82,49 +100,168 @@ const submitFilters = () => {
                     class="rounded-md border border-input bg-transparent px-3 py-2"
                     @change="submitFilters"
                 >
-                    <option value="all">All branches</option>
-                    <option v-for="branch in branches" :key="branch.id" :value="String(branch.id)">{{ branch.name }}</option>
+                    <option value="all">
+                        {{ t('dashboard.admin.contracts.index.all_branches') }}
+                    </option>
+                    <option
+                        v-for="branch in branches"
+                        :key="branch.id"
+                        :value="String(branch.id)"
+                    >
+                        {{ branch.name }}
+                    </option>
                 </select>
 
-                <Button variant="outline" @click="submitFilters">Filter</Button>
+                <Button variant="outline" @click="submitFilters">{{
+                    t('dashboard.admin.contracts.index.filter')
+                }}</Button>
             </div>
 
             <div class="overflow-x-auto rounded-md border">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
                         <tr>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Contract #</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Reservation</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Renter</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Branch</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Status</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Files</th>
-                            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500">Actions</th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.contract_number',
+                                    )
+                                }}
+                            </th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.reservation',
+                                    )
+                                }}
+                            </th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.renter',
+                                    )
+                                }}
+                            </th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.branch',
+                                    )
+                                }}
+                            </th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.status',
+                                    )
+                                }}
+                            </th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.files',
+                                    )
+                                }}
+                            </th>
+                            <th
+                                class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500"
+                            >
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.table.actions',
+                                    )
+                                }}
+                            </th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-200 bg-white">
                         <tr v-for="item in contracts.data" :key="item.id">
-                            <td class="px-4 py-3 font-medium">{{ item.contract_number }}</td>
-                            <td class="px-4 py-3">{{ item.reservation_number || '—' }}</td>
-                            <td class="px-4 py-3">{{ item.renter_name || '—' }}</td>
-                            <td class="px-4 py-3">{{ item.branch_name || '—' }}</td>
-                            <td class="px-4 py-3 capitalize">{{ item.status }}</td>
+                            <td class="px-4 py-3 font-medium">
+                                {{ item.contract_number }}
+                            </td>
+                            <td class="px-4 py-3">
+                                {{ item.reservation_number || '-' }}
+                            </td>
+                            <td class="px-4 py-3">
+                                {{ item.renter_name || '-' }}
+                            </td>
+                            <td class="px-4 py-3">
+                                {{ item.branch_name || '-' }}
+                            </td>
+                            <td class="px-4 py-3 capitalize">
+                                {{ item.status }}
+                            </td>
                             <td class="px-4 py-3 text-sm text-gray-600">
-                                Start: {{ item.has_start_contract ? 'Yes' : 'No' }} / End: {{ item.has_end_contract ? 'Yes' : 'No' }}
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.start_file',
+                                    )
+                                }}:
+                                {{
+                                    item.has_start_contract
+                                        ? t(
+                                              'dashboard.admin.contracts.index.yes',
+                                          )
+                                        : t(
+                                              'dashboard.admin.contracts.index.no',
+                                          )
+                                }}
+                                /
+                                {{
+                                    t(
+                                        'dashboard.admin.contracts.index.end_file',
+                                    )
+                                }}:
+                                {{
+                                    item.has_end_contract
+                                        ? t(
+                                              'dashboard.admin.contracts.index.yes',
+                                          )
+                                        : t(
+                                              'dashboard.admin.contracts.index.no',
+                                          )
+                                }}
                             </td>
                             <td class="px-4 py-3">
                                 <div class="flex gap-2">
                                     <Link :href="`${actions.index}/${item.id}`">
-                                        <Button size="sm" variant="outline">View</Button>
+                                        <Button size="sm" variant="outline">{{
+                                            t(
+                                                'dashboard.admin.contracts.index.view',
+                                            )
+                                        }}</Button>
                                     </Link>
-                                    <Link :href="`${actions.index}/${item.id}/edit`">
-                                        <Button size="sm" variant="outline">Edit</Button>
+                                    <Link
+                                        :href="`${actions.index}/${item.id}/edit`"
+                                    >
+                                        <Button size="sm" variant="outline">{{
+                                            t(
+                                                'dashboard.admin.contracts.index.edit',
+                                            )
+                                        }}</Button>
                                     </Link>
                                 </div>
                             </td>
                         </tr>
                         <tr v-if="contracts.data.length === 0">
-                            <td colspan="7" class="px-4 py-8 text-center text-gray-500">No contracts found.</td>
+                            <td
+                                colspan="7"
+                                class="px-4 py-8 text-center text-gray-500"
+                            >
+                                {{ t('dashboard.admin.contracts.index.empty') }}
+                            </td>
                         </tr>
                     </tbody>
                 </table>
@@ -136,10 +273,18 @@ const submitFilters = () => {
                         v-if="link.url"
                         :href="link.url"
                         class="rounded border px-3 py-1 text-sm"
-                        :class="link.active ? 'bg-primary text-primary-foreground' : 'bg-white'"
+                        :class="
+                            link.active
+                                ? 'bg-primary text-primary-foreground'
+                                : 'bg-white'
+                        "
                         v-html="link.label"
                     />
-                    <span v-else class="rounded border px-3 py-1 text-sm text-gray-400" v-html="link.label" />
+                    <span
+                        v-else
+                        class="rounded border px-3 py-1 text-sm text-gray-400"
+                        v-html="link.label"
+                    />
                 </template>
             </div>
         </main>

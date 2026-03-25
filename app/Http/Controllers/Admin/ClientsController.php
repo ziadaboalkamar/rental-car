@@ -2,19 +2,34 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Core\TenantContext;
+use App\Enums\ClientDocumentExtractionStatus;
+use App\Enums\ClientDocumentType;
 use App\Http\Controllers\Controller;
 use App\Enums\PaymentStatus;
 use App\Enums\UserRole;
+use App\Models\ClientDocument;
 use App\Models\Payment;
 use App\Models\User;
+use App\Services\ClientDocuments\LocalClientDocumentExtractor;
 use App\Support\BranchAccess;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
+use MohamedGaldi\ViltFilepond\Services\FilePondService;
 
 class ClientsController extends Controller
 {
-    public function __construct(private BranchAccess $branchAccess)
+    public function __construct(
+        private BranchAccess $branchAccess,
+        private FilePondService $filePondService,
+        private LocalClientDocumentExtractor $localClientDocumentExtractor
+    )
     {
     }
 
@@ -95,7 +110,7 @@ class ClientsController extends Controller
 
     public function show(User $client): Response
     {
-        abort_unless($this->branchAccess->canAccessBranchId(request()->user(), $client->branch_id ? (int) $client->branch_id : null), 403);
+        $this->ensureClientAccessible($client, request()->user());
 
         $totalSpent = Payment::where('user_id', $client->id)
             ->where('status', PaymentStatus::COMPLETED)
@@ -125,10 +140,182 @@ class ClientsController extends Controller
                 'total_reservations' => $client->reservations()->count(),
                 'total_payments' => $client->payments()->count(),
                 'total_spent' => (float) $totalSpent,
+                'total_documents' => $client->clientDocuments()->count(),
             ],
             'reservations' => $reservations,
             'payments' => $payments,
+            'actions' => [
+                'documents' => route('admin.clients.documents', [
+                    'subdomain' => request()->route('subdomain'),
+                    'client' => $client->id,
+                ]),
+            ],
         ]);
+    }
+
+    public function documents(Request $request, User $client): Response
+    {
+        $this->ensureClientAccessible($client, $request->user());
+
+        $client->loadMissing([
+            'branch:id,name',
+            'clientDocuments.files',
+        ]);
+
+        $documents = collect(ClientDocumentType::options())
+            ->map(function (array $type) use ($client) {
+                /** @var ClientDocument|null $document */
+                $document = $client->clientDocuments
+                    ->first(fn (ClientDocument $doc) => $doc->document_type?->value === $type['value']);
+
+                return [
+                    'document_type' => $type['value'],
+                    'label' => $type['label'],
+                    'description' => $type['description'],
+                    'id' => $document?->id,
+                    'extraction_status' => $document?->extraction_status?->value ?? ClientDocumentExtractionStatus::NOT_REQUESTED->value,
+                    'extraction_status_label' => $document?->extraction_status?->label() ?? ClientDocumentExtractionStatus::NOT_REQUESTED->label(),
+                    'extraction_provider' => $document?->extraction_provider,
+                    'extraction_engine' => $document?->extraction_engine,
+                    'confidence' => $document?->confidence !== null ? (float) $document->confidence : null,
+                    'raw_text' => $document?->raw_text,
+                    'raw_output' => $document?->raw_output,
+                    'extracted_data' => $document?->extracted_data ?? [],
+                    'approved_data' => $document?->approved_data ?? [],
+                    'reviewed_at' => $document?->reviewed_at?->toIso8601String(),
+                    'files' => $document ? $this->collectionFiles($document, 'scan') : [],
+                ];
+            })
+            ->values()
+            ->all();
+
+        return Inertia::render('Admin/Clients/Documents', [
+            'client' => [
+                'id' => $client->id,
+                'name' => $client->name,
+                'email' => $client->email,
+                'branch_name' => $client->branch?->name,
+            ],
+            'documents' => $documents,
+            'fieldSchema' => $this->documentFieldSchema(),
+            'actions' => [
+                'back' => route('admin.clients.show', [
+                    'subdomain' => $request->route('subdomain'),
+                    'client' => $client->id,
+                ]),
+                'save' => route('admin.clients.documents.save', [
+                    'subdomain' => $request->route('subdomain'),
+                    'client' => $client->id,
+                ]),
+                'extract' => route('admin.clients.documents.extract', [
+                    'subdomain' => $request->route('subdomain'),
+                    'client' => $client->id,
+                ]),
+            ],
+            'ocr' => [
+                'enabled' => (bool) config('local_ocr.enabled', true),
+                'python_binary' => (string) config('local_ocr.python_binary', 'python'),
+            ],
+        ]);
+    }
+
+    public function extractDocument(Request $request, User $client): JsonResponse
+    {
+        $this->ensureClientAccessible($client, $request->user());
+
+        $validated = $request->validate([
+            'document_type' => ['required', Rule::in(ClientDocumentType::values())],
+            'temp_folders' => ['required', 'array', 'min:1'],
+            'temp_folders.*' => ['string'],
+        ]);
+
+        try {
+            $result = $this->localClientDocumentExtractor->extractFromTempFolders(
+                $validated['temp_folders'],
+                (string) $validated['document_type']
+            );
+
+            return response()->json([
+                'message' => 'Document extraction completed.',
+                'fields' => $result['fields'],
+                'raw_output' => $result['raw_output'],
+                'raw_text' => $result['raw_text'],
+                'confidence' => $result['confidence'],
+                'provider' => $result['provider'],
+                'engine' => $result['engine'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => (string) $e->getMessage(),
+            ], 422);
+        }
+    }
+
+    public function saveDocument(Request $request, User $client): RedirectResponse
+    {
+        $this->ensureClientAccessible($client, $request->user());
+
+        $tenantId = (int) (TenantContext::id() ?? $request->user()?->tenant_id ?? 0);
+        if ($tenantId <= 0) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'document_type' => ['required', Rule::in(ClientDocumentType::values())],
+            'approved_data' => ['nullable', 'array'],
+            'extracted_data' => ['nullable', 'array'],
+            'raw_output' => ['nullable', 'array'],
+            'raw_text' => ['nullable', 'string'],
+            'confidence' => ['nullable', 'numeric', 'between:0,1'],
+            'extraction_provider' => ['nullable', 'string', 'max:100'],
+            'extraction_engine' => ['nullable', 'string', 'max:100'],
+            'temp_folders' => ['array'],
+            'temp_folders.*' => ['string'],
+            'removed_file_ids' => ['array'],
+            'removed_file_ids.*' => ['integer'],
+        ]);
+
+        $document = ClientDocument::query()->firstOrNew([
+            'tenant_id' => $tenantId,
+            'user_id' => $client->id,
+            'document_type' => (string) $validated['document_type'],
+        ]);
+
+        $approvedData = is_array($validated['approved_data'] ?? null)
+            ? array_filter($validated['approved_data'], fn ($value) => $value !== null && $value !== '')
+            : [];
+        $extractedData = is_array($validated['extracted_data'] ?? null)
+            ? array_filter($validated['extracted_data'], fn ($value) => $value !== null && $value !== '')
+            : [];
+
+        $document->extracted_data = $extractedData !== [] ? $extractedData : null;
+        $document->approved_data = $approvedData !== [] ? $approvedData : null;
+        $document->raw_output = $validated['raw_output'] ?? null;
+        $document->raw_text = $this->nullableString($validated['raw_text'] ?? null);
+        $document->confidence = $validated['confidence'] ?? null;
+        $document->extraction_provider = $this->nullableString($validated['extraction_provider'] ?? null);
+        $document->extraction_engine = $this->nullableString($validated['extraction_engine'] ?? null);
+
+        if ($approvedData !== []) {
+            $document->extraction_status = ClientDocumentExtractionStatus::REVIEWED;
+            $document->reviewed_at = Carbon::now();
+            $document->reviewed_by_user_id = $request->user()?->id;
+        } elseif ($extractedData !== [] || !empty($validated['raw_output'])) {
+            $document->extraction_status = ClientDocumentExtractionStatus::COMPLETED;
+        } else {
+            $document->extraction_status = ClientDocumentExtractionStatus::NOT_REQUESTED;
+        }
+
+        $document->save();
+
+        $this->syncDocumentFiles($document, $request);
+
+        return redirect()
+            ->route('admin.clients.documents', [
+                'subdomain' => $request->route('subdomain'),
+                'client' => $client->id,
+            ])
+            ->with('success', 'Client document saved successfully.');
     }
 
     public function suspend(User $client)
@@ -159,5 +346,84 @@ class ClientsController extends Controller
         return redirect()
             ->route('admin.clients.show', $client)
             ->with('success', 'Client activated successfully.');
+    }
+
+    private function ensureClientAccessible(User $client, ?User $actor): void
+    {
+        abort_unless($client->role === UserRole::CLIENT, 404);
+        abort_unless($this->branchAccess->canAccessBranchId($actor, $client->branch_id ? (int) $client->branch_id : null), 403);
+    }
+
+    /**
+     * @return array<int, array{key: string, label: string}>
+     */
+    private function documentFieldSchema(): array
+    {
+        return [
+            ['key' => 'document_number', 'label' => 'Document Number'],
+            ['key' => 'full_name', 'label' => 'Full Name'],
+            ['key' => 'date_of_birth', 'label' => 'Date Of Birth'],
+            ['key' => 'expiry_date', 'label' => 'Expiry Date'],
+            ['key' => 'issue_date', 'label' => 'Issue Date'],
+            ['key' => 'nationality', 'label' => 'Nationality'],
+            ['key' => 'license_class', 'label' => 'License Class'],
+            ['key' => 'address', 'label' => 'Address'],
+            ['key' => 'place_of_issue', 'label' => 'Place Of Issue'],
+        ];
+    }
+
+    private function syncDocumentFiles(ClientDocument $document, Request $request): void
+    {
+        $tempFolders = $request->input('temp_folders', []);
+        $removedIds = $request->input('removed_file_ids', []);
+
+        $tempFolders = is_array($tempFolders) ? $tempFolders : [];
+        $removedIds = is_array($removedIds) ? $removedIds : [];
+
+        if (!empty($tempFolders)) {
+            $existingIds = $document->files()->where('collection', 'scan')->pluck('id')->all();
+            $removedIds = array_values(array_unique(array_merge($removedIds, $existingIds)));
+        }
+
+        $this->filePondService->handleFileUpdates(
+            $document,
+            $tempFolders,
+            $removedIds,
+            'scan'
+        );
+    }
+
+    private function collectionFiles(ClientDocument $document, string $collection): array
+    {
+        $files = $document->relationLoaded('files')
+            ? $document->files->where('collection', $collection)->values()
+            : $document->files()->where('collection', $collection)->get();
+
+        return $files->map(fn ($file) => [
+            'id' => $file->id,
+            'url' => $this->storageUrl($file->path),
+        ])->values()->all();
+    }
+
+    private function storageUrl(?string $path): ?string
+    {
+        $path = trim((string) ($path ?? ''));
+        if ($path === '') {
+            return null;
+        }
+
+        $normalized = ltrim($path, '/');
+        if (str_starts_with($normalized, 'storage/')) {
+            $normalized = substr($normalized, strlen('storage/'));
+        }
+
+        return Storage::url($normalized);
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        return $value === '' ? null : $value;
     }
 }

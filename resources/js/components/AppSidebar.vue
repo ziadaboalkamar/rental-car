@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import NavMain from '@/components/NavMain.vue';
-import SuperAdminNav from '@/components/SuperAdminNav.vue';
 import NavUser from '@/components/NavUser.vue';
+import SuperAdminNav from '@/components/SuperAdminNav.vue';
 import {
     Sidebar,
     SidebarContent,
@@ -11,50 +11,82 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { index as carsIndex } from "@/routes/admin/cars/index";
-import { index as reservationsIndex } from "@/routes/admin/reservations/index";
-import { index as clientsIndex } from "@/routes/admin/clients/index";
-import { index as paymentsIndex } from "@/routes/admin/payments/index";
-import { index as reportsIndex } from "@/routes/admin/reports/index";
-import { index as supportIndex } from "@/routes/admin/support/index";
-import { index as branchesIndex } from "@/routes/admin/branches/index";
-import { index as employeesIndex } from "@/routes/admin/employees/index";
-import { index as rolesIndex } from "@/routes/admin/roles/index";
-import { index as contractsIndex } from "@/routes/admin/contracts/index";
-import { type NavItem } from '@/types';
 import { useTrans } from '@/composables/useTrans';
-import { Link, usePage } from '@inertiajs/vue3';
-import { Car, Calendar, User, CreditCard, BarChart, LifeBuoy, MapPin, Users, Shield, FileText, Wrench, AlertTriangle, Tag, Percent, LayoutDashboard } from 'lucide-vue-next';
-import AppLogo from './AppLogo.vue';
 import { home } from '@/routes';
+import { index as branchesIndex } from '@/routes/admin/branches/index';
+import { index as carsIndex } from '@/routes/admin/cars/index';
+import { index as clientsIndex } from '@/routes/admin/clients/index';
+import { index as contractsIndex } from '@/routes/admin/contracts/index';
+import { index as employeesIndex } from '@/routes/admin/employees/index';
+import { index as paymentsIndex } from '@/routes/admin/payments/index';
+import { index as reportsIndex } from '@/routes/admin/reports/index';
+import { index as reservationsIndex } from '@/routes/admin/reservations/index';
+import { index as rolesIndex } from '@/routes/admin/roles/index';
+import { index as supportIndex } from '@/routes/admin/support/index';
+import { type NavItem } from '@/types';
+import { Link, usePage } from '@inertiajs/vue3';
+import {
+    AlertTriangle,
+    BarChart,
+    Calendar,
+    Car,
+    CreditCard,
+    FileText,
+    LayoutDashboard,
+    LifeBuoy,
+    MapPin,
+    Percent,
+    Shield,
+    ShieldAlert,
+    Tag,
+    User,
+    Users,
+    Wrench,
+} from 'lucide-vue-next';
 import { computed } from 'vue';
+import AppLogo from './AppLogo.vue';
 
 const page = usePage<any>();
 const { t } = useTrans();
 const availableLocales = computed<string[]>(() =>
-    Array.isArray(page.props?.available_locales) && page.props.available_locales.length
+    Array.isArray(page.props?.available_locales) &&
+    page.props.available_locales.length
         ? page.props.available_locales
-        : ['en']
+        : ['en'],
 );
-const isRtl = computed(() => page.props.direction === 'rtl' || page.props.locale === 'ar');
+const isRtl = computed(
+    () => page.props.direction === 'rtl' || page.props.locale === 'ar',
+);
 const stripLocalePrefix = (path: string) => {
-    const escapedLocales = availableLocales.value.map((locale: string) => locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const localeRegex = new RegExp(`^\\/(?:${escapedLocales.join('|')})(?=\\/|$)`);
+    const escapedLocales = availableLocales.value.map((locale: string) =>
+        locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+    );
+    const localeRegex = new RegExp(
+        `^\\/(?:${escapedLocales.join('|')})(?=\\/|$)`,
+    );
 
     return path.replace(localeRegex, '') || '/';
 };
-const isSuperAdmin = computed(() => stripLocalePrefix(String(page.url || '/')).startsWith('/superadmin'));
+const isSuperAdmin = computed(() =>
+    stripLocalePrefix(String(page.url || '/')).startsWith('/superadmin'),
+);
 const currentTenant = computed(() => page.props.current_tenant);
 const localePrefix = computed(() => {
     const currentPath = String(page.url || '/');
-    const escapedLocales = availableLocales.value.map((locale) => locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-    const localeRegex = new RegExp(`^\\/(${escapedLocales.join('|')})(?=\\/|$)`);
+    const escapedLocales = availableLocales.value.map((locale) =>
+        locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+    );
+    const localeRegex = new RegExp(
+        `^\\/(${escapedLocales.join('|')})(?=\\/|$)`,
+    );
     const match = currentPath.match(localeRegex);
     return match ? `/${match[1]}` : '';
 });
 const adminHref = (path: string) => `${localePrefix.value}/admin${path}`;
 const authPermissions = computed<string[]>(() =>
-    Array.isArray(page.props?.auth?.permissions) ? page.props.auth.permissions : [],
+    Array.isArray(page.props?.auth?.permissions)
+        ? page.props.auth.permissions
+        : [],
 );
 
 const mainNavItems = computed<NavItem[]>(() => {
@@ -95,6 +127,12 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Car Violations',
             href: adminHref('/car-violations'),
             icon: AlertTriangle,
+            permission: 'tenant-manage-cars',
+        },
+        {
+            title: 'Damage Reports',
+            href: adminHref('/car-damage-reports'),
+            icon: ShieldAlert,
             permission: 'tenant-manage-cars',
         },
         {
@@ -181,22 +219,44 @@ const mainNavItems = computed<NavItem[]>(() => {
             icon: Shield,
             permission: 'tenant-manage-settings',
         },
-    ].filter((item) => !item.permission || authPermissions.value.includes(item.permission));
+    ].filter(
+        (item) =>
+            !item.permission || authPermissions.value.includes(item.permission),
+    );
 });
 </script>
 
 <template>
-    <Sidebar :side="isRtl ? 'right' : 'left'" collapsible="icon" variant="inset">
+    <Sidebar
+        :side="isRtl ? 'right' : 'left'"
+        collapsible="icon"
+        variant="inset"
+    >
         <SidebarHeader>
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" as-child>
-                        <Link :href="isSuperAdmin ? '/superadmin' : (typeof home === 'function' ? home().url : '/')">
-                            <div v-if="currentTenant && currentTenant.name" class="flex items-center gap-2">
-                                <div class="bg-primary text-primary-foreground rounded-md p-1 font-bold text-xl h-8 w-8 flex items-center justify-center">
+                        <Link
+                            :href="
+                                isSuperAdmin
+                                    ? '/superadmin'
+                                    : typeof home === 'function'
+                                      ? home().url
+                                      : '/'
+                            "
+                        >
+                            <div
+                                v-if="currentTenant && currentTenant.name"
+                                class="flex items-center gap-2"
+                            >
+                                <div
+                                    class="flex h-8 w-8 items-center justify-center rounded-md bg-primary p-1 text-xl font-bold text-primary-foreground"
+                                >
                                     {{ currentTenant.name.charAt(0) }}
                                 </div>
-                                <span class="font-semibold truncate">{{ currentTenant.name }}</span>
+                                <span class="truncate font-semibold">{{
+                                    currentTenant.name
+                                }}</span>
                             </div>
                             <AppLogo v-else />
                         </Link>

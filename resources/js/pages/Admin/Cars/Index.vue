@@ -254,6 +254,9 @@ const destroyCar = () => {
                                 </span>
                             </td>
                             <td class="px-4 py-3 text-right space-x-2">
+                                <Link v-if="subdomain" :href="`/admin/cars/${car.id}/calendar`">
+                                    <Button variant="outline" size="sm">Calendar</Button>
+                                </Link>
                                 <Link v-if="subdomain" :href="edit([subdomain, car.id]).url">
                                     <Button variant="outline" size="sm">{{ t('dashboard.admin.common.edit') }}</Button>
                                 </Link>

@@ -88,6 +88,16 @@ class User extends Authenticatable implements LaratrustUser
         return $this->hasMany(Payment::class);
     }
 
+    public function clientDocuments(): HasMany
+    {
+        return $this->hasMany(ClientDocument::class);
+    }
+
+    public function contractDrivers(): HasMany
+    {
+        return $this->hasMany(ContractDriver::class, 'client_id');
+    }
+
     public function tickets()
     {
         return $this->hasMany(Ticket::class);

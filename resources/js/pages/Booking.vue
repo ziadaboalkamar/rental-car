@@ -29,12 +29,30 @@ interface Car {
     status: string;
 }
 
+interface AvailabilityRange {
+    start_date: string;
+    end_date: string;
+}
+
 const $page = usePage<any>();
 const { t } = useTrans();
 const car = computed<Car>(() => $page.props.car as Car);
 const currentTenant = computed(() => $page.props.current_tenant);
 const tenantSiteSettings = computed(() => $page.props.tenant_site_settings ?? null);
 const hasCoupons = computed(() => Boolean($page.props.hasCoupons));
+const availabilityCalendar = computed<{
+    window_starts_at: string;
+    window_ends_at: string;
+    today: string;
+    window: {
+        starts_at: string;
+        ends_at: string;
+        label: string;
+        previous: string;
+        next: string;
+    };
+    blocked_ranges: AvailabilityRange[];
+} | null>(() => $page.props.availabilityCalendar ?? null);
 
 const form = useForm({
     start_date: '',
@@ -54,6 +72,116 @@ const couponAppliedCode = ref('');
 
 const availabilityErrorMessage = computed(() => {
     return form.errors.start_date || form.errors.end_date || '';
+});
+
+function parseDate(value: string): Date {
+    return new Date(`${value}T00:00:00`);
+}
+
+function formatDate(value: Date): string {
+    return value.toISOString().slice(0, 10);
+}
+
+function addDays(value: Date, days: number): Date {
+    const next = new Date(value);
+    next.setDate(next.getDate() + days);
+    return next;
+}
+
+function formatShortDate(value: string): string {
+    return new Intl.DateTimeFormat('en-US', {
+        month: 'short',
+        day: 'numeric',
+    }).format(parseDate(value));
+}
+
+function formatWeekday(value: string): string {
+    return new Intl.DateTimeFormat('en-US', {
+        weekday: 'short',
+    }).format(parseDate(value));
+}
+
+function openAvailabilityWindow(windowStart: string) {
+    if (!currentTenant.value?.slug) {
+        return;
+    }
+
+    router.get(`/fleet/${car.value.id}`, { window_start: windowStart }, {
+        preserveState: true,
+        preserveScroll: true,
+        replace: true,
+    });
+}
+
+function isBlockedDate(iso: string): boolean {
+    return Boolean(availabilityCalendar.value?.blocked_ranges.some((range) => range.start_date <= iso && range.end_date >= iso));
+}
+
+function hasBlockedDateInRange(startIso: string, endIso: string): boolean {
+    return Boolean(availabilityCalendar.value?.blocked_ranges.some((range) => range.start_date <= endIso && range.end_date >= startIso));
+}
+
+function selectAvailableDate(iso: string) {
+    if (!availabilityCalendar.value || iso < availabilityCalendar.value.today || isBlockedDate(iso)) {
+        return;
+    }
+
+    form.clearErrors('start_date');
+    form.clearErrors('end_date');
+
+    if (!form.start_date || form.end_date) {
+        form.start_date = iso;
+        form.end_date = '';
+        return;
+    }
+
+    if (iso < form.start_date) {
+        form.start_date = iso;
+        form.end_date = '';
+        return;
+    }
+
+    if (hasBlockedDateInRange(form.start_date, iso)) {
+        showAvailabilityDialog.value = true;
+        form.setError('end_date', 'The selected range includes unavailable days. Please choose free dates only.');
+        return;
+    }
+
+    form.end_date = iso;
+}
+
+const availabilityDays = computed(() => {
+    if (!availabilityCalendar.value) {
+        return [];
+    }
+
+    const start = parseDate(availabilityCalendar.value.window_starts_at);
+    const end = parseDate(availabilityCalendar.value.window_ends_at);
+    const days: Array<{
+        iso: string;
+        label: string;
+        weekday: string;
+        isPast: boolean;
+        isBlocked: boolean;
+        isSelectedStart: boolean;
+        isSelectedEnd: boolean;
+    }> = [];
+
+    for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
+        const iso = formatDate(cursor);
+
+        days.push({
+            iso,
+            label: formatShortDate(iso),
+            weekday: formatWeekday(iso),
+            isPast: iso < availabilityCalendar.value.today,
+            isBlocked: isBlockedDate(iso),
+            isSelectedStart: form.start_date === iso,
+            isSelectedEnd: form.end_date === iso,
+        });
+    }
+
+    return days;
 });
 
 // Calculate rental details
@@ -442,6 +570,105 @@ const commonLocations = computed(() => [
                                 <p class="leading-relaxed text-gray-600">
                                     {{ car.description }}
                                 </p>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="availabilityCalendar"
+                            class="rounded-2xl border border-gray-100 bg-white p-8 shadow-lg"
+                        >
+                            <div class="mb-6 flex items-center space-x-3">
+                                <div
+                                    class="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-600"
+                                >
+                                    <svg
+                                        class="h-5 w-5 text-white"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            stroke-width="2"
+                                            d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                                        ></path>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h3 class="text-2xl font-bold text-gray-900">
+                                        Availability Calendar
+                                    </h3>
+                                    <p class="text-sm text-gray-500">
+                                        Green days are free. Red days are already booked. Click a free day to fill your rental dates.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div class="mb-6 flex flex-wrap items-center gap-3 text-sm">
+                                <div class="flex items-center gap-2">
+                                    <span class="h-3 w-3 rounded-full bg-emerald-500"></span>
+                                    <span class="text-gray-600">Free</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="h-3 w-3 rounded-full bg-red-400"></span>
+                                    <span class="text-gray-600">Booked</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="h-3 w-3 rounded-full bg-orange-500"></span>
+                                    <span class="text-gray-600">Selected</span>
+                                </div>
+                            </div>
+
+                            <div class="space-y-4">
+                                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <Button variant="outline" @click="openAvailabilityWindow(availabilityCalendar.window.previous)">
+                                            Previous
+                                        </Button>
+                                        <div class="min-w-40 text-center text-lg font-semibold text-gray-900">
+                                            {{ availabilityCalendar.window.label }}
+                                        </div>
+                                        <Button variant="outline" @click="openAvailabilityWindow(availabilityCalendar.window.next)">
+                                            Next
+                                        </Button>
+                                    </div>
+
+                                    <input
+                                        type="date"
+                                        :value="availabilityCalendar.window.starts_at"
+                                        class="h-10 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
+                                        @change="openAvailabilityWindow(($event.target as HTMLInputElement).value)"
+                                    >
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
+                                    <button
+                                        v-for="day in availabilityDays"
+                                        :key="day.iso"
+                                        type="button"
+                                        class="min-h-20 rounded-xl border px-3 py-3 text-left text-sm transition-all duration-200"
+                                        :class="{
+                                            'border-gray-200 bg-white text-gray-400': day.isPast,
+                                            'border-red-200 bg-red-50 text-red-600': day.isBlocked && !day.isSelectedStart && !day.isSelectedEnd,
+                                            'border-emerald-200 bg-emerald-50 text-emerald-700 hover:border-emerald-300 hover:bg-emerald-100': !day.isPast && !day.isBlocked && !day.isSelectedStart && !day.isSelectedEnd,
+                                            'border-orange-300 bg-orange-500 text-white shadow-sm': day.isSelectedStart || day.isSelectedEnd,
+                                        }"
+                                        :disabled="day.isPast || day.isBlocked"
+                                        @click="selectAvailableDate(day.iso)"
+                                    >
+                                        <div class="text-xs font-semibold uppercase tracking-wide opacity-80">
+                                            {{ day.weekday }}
+                                        </div>
+                                        <div class="mt-1 text-base font-semibold">{{ day.label }}</div>
+                                        <div class="mt-1 text-[11px]">
+                                            <span v-if="day.isSelectedStart || day.isSelectedEnd">Selected</span>
+                                            <span v-else-if="day.isBlocked">Booked</span>
+                                            <span v-else-if="day.isPast">Closed</span>
+                                            <span v-else>Free</span>
+                                        </div>
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

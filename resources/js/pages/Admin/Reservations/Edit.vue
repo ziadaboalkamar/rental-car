@@ -10,7 +10,19 @@ import { index } from '@/routes/admin/reservations';
 import { update } from '@/routes/admin/reservations';
 
 const props = defineProps<{
-    reservation: any;
+    reservation: any | null;
+    clients: Array<{ id: number; name: string; email: string }>;
+    cars: Array<{ id: number; label: string; license_plate: string; branch_name?: string | null; price_per_day: number }>;
+    carDamagesByCar: Record<number, Array<{
+        id: number;
+        zone_label: string;
+        view_side_label: string;
+        damage_type_label: string;
+        severity_label: string;
+        quantity: number;
+        notes: string | null;
+        first_detected_at: string | null;
+    }>>;
     enums: {
         statuses: Array<{ value: string; label: string; color: string }>;
     };
@@ -19,6 +31,14 @@ const props = defineProps<{
 const statuses = computed(() => props.enums.statuses || []);
 const page = usePage<any>();
 const subdomain = computed(() => page.props.current_tenant?.slug);
+const isEdit = computed(() => Boolean(props.reservation));
+const selectedCarDamageCases = computed(() => {
+    const selectedCarId = isEdit.value
+        ? Number(props.reservation?.car?.id || 0)
+        : Number(form.car_id || 0);
+
+    return selectedCarId > 0 ? (props.carDamagesByCar[selectedCarId] ?? []) : [];
+});
 
 const formatDateForInput = (dateString: string | null | undefined): string => {
     if (!dateString) return '';
@@ -27,6 +47,8 @@ const formatDateForInput = (dateString: string | null | undefined): string => {
 };
 
 const form = useForm({
+    user_id: props.reservation?.user?.id || '',
+    car_id: props.reservation?.car?.id || '',
     start_date: formatDateForInput(props.reservation?.start_date) || '',
     end_date: formatDateForInput(props.reservation?.end_date) || '',
     pickup_time: props.reservation?.pickup_time || '09:00',
@@ -35,31 +57,36 @@ const form = useForm({
     return_location: props.reservation?.return_location || '',
     discount_amount: props.reservation?.discount_amount || 0,
     notes: props.reservation?.notes || '',
-    status: props.reservation?.status || 'pending',
+    status: props.reservation?.status || 'confirmed',
     cancellation_reason: props.reservation?.cancellation_reason || '',
 });
 
 function submit() {
     if (!subdomain.value) return;
-    form.put(update([subdomain.value, props.reservation.id]).url);
+    if (isEdit.value) {
+        form.put(update([subdomain.value, props.reservation.id]).url);
+        return;
+    }
+
+    form.post(`/admin/reservations`);
 }
 </script>
 
 <template>
     <Head
-        :title="`Edit Reservation ${reservation?.reservation_number || ''}`"
+        :title="isEdit ? `Edit Reservation ${reservation?.reservation_number || ''}` : 'Create Reservation'"
     />
     <AdminLayout>
         <main class="flex-1 space-y-6 p-8">
             <div class="flex items-center justify-between gap-4">
-                <h1 class="text-2xl font-semibold">Edit Reservation</h1>
+                <h1 class="text-2xl font-semibold">{{ isEdit ? 'Edit Reservation' : 'Create Reservation' }}</h1>
                 <Link v-if="subdomain" :href="index(subdomain).url">
                     <Button variant="outline">Back</Button>
                 </Link>
             </div>
 
             <!-- Summary -->
-            <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div v-if="isEdit" class="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div class="rounded-md border p-4">
                     <div class="text-sm text-muted-foreground">
                         Reservation #
@@ -90,6 +117,69 @@ function submit() {
 
             <form class="space-y-6" @submit.prevent="submit">
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div v-if="!isEdit">
+                        <Label for="user_id">Client</Label>
+                        <select
+                            id="user_id"
+                            v-model="form.user_id"
+                            class="mt-1 block w-full rounded-md border border-gray-300 py-2 pr-10 pl-3 text-base focus:border-blue-500 focus:ring-blue-500 focus:outline-none sm:text-sm"
+                        >
+                            <option value="" disabled>Select client</option>
+                            <option
+                                v-for="client in clients"
+                                :key="client.id"
+                                :value="client.id"
+                            >
+                                {{ client.name }} ({{ client.email }})
+                            </option>
+                        </select>
+                        <InputError :message="form.errors.user_id" class="mt-1" />
+                    </div>
+
+                    <div v-if="!isEdit">
+                        <Label for="car_id">Car</Label>
+                        <select
+                            id="car_id"
+                            v-model="form.car_id"
+                            class="mt-1 block w-full rounded-md border border-gray-300 py-2 pr-10 pl-3 text-base focus:border-blue-500 focus:ring-blue-500 focus:outline-none sm:text-sm"
+                        >
+                            <option value="" disabled>Select car</option>
+                            <option
+                                v-for="carOption in cars"
+                                :key="carOption.id"
+                                :value="carOption.id"
+                            >
+                                {{ carOption.label }} | {{ carOption.license_plate }}{{ carOption.branch_name ? ` | ${carOption.branch_name}` : '' }}
+                            </option>
+                        </select>
+                        <InputError :message="form.errors.car_id" class="mt-1" />
+                        <div class="mt-3 rounded-md border p-3" v-if="selectedCarDamageCases.length">
+                            <div class="mb-2 text-sm font-medium">Current Car Damages</div>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full text-sm">
+                                    <thead>
+                                        <tr class="border-b text-left text-muted-foreground">
+                                            <th class="px-2 py-2">Zone</th>
+                                            <th class="px-2 py-2">View</th>
+                                            <th class="px-2 py-2">Type</th>
+                                            <th class="px-2 py-2">Severity</th>
+                                            <th class="px-2 py-2">Qty</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="damage in selectedCarDamageCases" :key="damage.id" class="border-b">
+                                            <td class="px-2 py-2">{{ damage.zone_label }}</td>
+                                            <td class="px-2 py-2">{{ damage.view_side_label }}</td>
+                                            <td class="px-2 py-2">{{ damage.damage_type_label }}</td>
+                                            <td class="px-2 py-2">{{ damage.severity_label }}</td>
+                                            <td class="px-2 py-2">{{ damage.quantity }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Start Date -->
                     <div>
                         <Label for="start_date">Start Date</Label>
@@ -248,9 +338,35 @@ function submit() {
 
                 </div>
 
+                <div v-if="isEdit && selectedCarDamageCases.length" class="rounded-md border p-4">
+                    <div class="mb-2 text-sm font-medium">Current Car Damages</div>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full text-sm">
+                            <thead>
+                                <tr class="border-b text-left text-muted-foreground">
+                                    <th class="px-2 py-2">Zone</th>
+                                    <th class="px-2 py-2">View</th>
+                                    <th class="px-2 py-2">Type</th>
+                                    <th class="px-2 py-2">Severity</th>
+                                    <th class="px-2 py-2">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="damage in selectedCarDamageCases" :key="damage.id" class="border-b">
+                                    <td class="px-2 py-2">{{ damage.zone_label }}</td>
+                                    <td class="px-2 py-2">{{ damage.view_side_label }}</td>
+                                    <td class="px-2 py-2">{{ damage.damage_type_label }}</td>
+                                    <td class="px-2 py-2">{{ damage.severity_label }}</td>
+                                    <td class="px-2 py-2">{{ damage.quantity }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
                     <Button type="submit" :disabled="form.processing">
-                        {{ form.processing ? 'Saving...' : 'Save Changes' }}
+                        {{ form.processing ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Reservation' }}
                     </Button>
                     <Link v-if="subdomain" :href="index(subdomain).url">
                         <Button type="button" variant="outline">Cancel</Button>

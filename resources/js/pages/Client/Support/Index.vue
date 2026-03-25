@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTrans } from '@/composables/useTrans';
 import ClientLayout from '@/layouts/ClientLayout.vue';
 import { create, show } from '@/routes/client/support';
 import { Head, router } from '@inertiajs/vue3';
@@ -21,8 +22,16 @@ const props = defineProps<{
     };
 }>();
 
+const { t, locale } = useTrans();
+
+const statusLabels: Record<string, string> = {
+    open: t('client_pages.support.index.statuses.open'),
+    in_progress: t('client_pages.support.index.statuses.in_progress'),
+    closed: t('client_pages.support.index.statuses.closed'),
+};
+
 const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString(locale.value, {
         year: 'numeric',
         month: 'short',
         day: 'numeric',
@@ -41,15 +50,18 @@ function goToCreateTicket() {
 </script>
 
 <template>
-    <Head title="Support" />
+    <Head :title="t('client_pages.support.index.head_title')" />
     <ClientLayout>
         <main class="flex-1 space-y-6 p-8">
             <div class="flex items-center justify-between gap-4">
-                <h1 class="text-2xl font-semibold">Support Tickets</h1>
-                <Button @click="goToCreateTicket">New Ticket</Button>
+                <h1 class="text-2xl font-semibold">
+                    {{ t('client_pages.support.index.title') }}
+                </h1>
+                <Button @click="goToCreateTicket">{{
+                    t('client_pages.support.index.new_ticket')
+                }}</Button>
             </div>
 
-            <!-- Tickets Table -->
             <div class="overflow-x-auto rounded-md border">
                 <table class="min-w-full divide-y divide-gray-200">
                     <thead class="bg-gray-50">
@@ -57,22 +69,38 @@ function goToCreateTicket() {
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Ticket #
+                                {{
+                                    t(
+                                        'client_pages.support.index.table.ticket_number',
+                                    )
+                                }}
                             </th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Subject
+                                {{
+                                    t(
+                                        'client_pages.support.index.table.subject',
+                                    )
+                                }}
                             </th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Status
+                                {{
+                                    t(
+                                        'client_pages.support.index.table.status',
+                                    )
+                                }}
                             </th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Created
+                                {{
+                                    t(
+                                        'client_pages.support.index.table.created',
+                                    )
+                                }}
                             </th>
                         </tr>
                     </thead>
@@ -95,7 +123,7 @@ function goToCreateTicket() {
                                 </div>
                             </td>
                             <td class="px-4 py-3">
-                                {{ ticket.status }}
+                                {{ statusLabels[ticket.status] || ticket.status }}
                             </td>
                             <td
                                 class="px-4 py-3 text-sm whitespace-nowrap text-gray-500"
@@ -105,17 +133,16 @@ function goToCreateTicket() {
                         </tr>
                         <tr v-if="props.tickets.data.length === 0">
                             <td
-                                colspan="6"
+                                colspan="4"
                                 class="px-4 py-6 text-center text-gray-500"
                             >
-                                No tickets found.
+                                {{ t('client_pages.support.index.empty') }}
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <!-- Pagination -->
             <nav
                 v-if="props.tickets.links?.length > 3"
                 class="flex justify-center"

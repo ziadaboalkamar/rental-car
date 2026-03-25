@@ -21,6 +21,7 @@ use App\Http\Controllers\Admin\TranslationSettingsController;
 use App\Http\Controllers\Admin\ContractsController;
 use App\Http\Controllers\Admin\CouponsController;
 use App\Http\Controllers\Admin\CarDiscountsController;
+use App\Http\Controllers\Admin\CarDamageReportsController;
 use App\Http\Controllers\Admin\DashboardController;
 
 Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription'])
@@ -35,6 +36,9 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
         Route::resource('cars', CarsController::class)
             ->except(['show'])
             ->middleware('permission:tenant-manage-cars');
+        Route::get('cars/{car}/calendar', [CarsController::class, 'calendar'])
+            ->middleware('permission:tenant-manage-cars')
+            ->name('cars.calendar');
 
         // Maintenance Types
         Route::resource('maintenance-types', MaintenanceTypesController::class)
@@ -52,10 +56,14 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
             ->except(['show'])
             ->parameters(['car-violations' => 'carViolation'])
             ->middleware('permission:tenant-manage-cars');
+        Route::resource('car-damage-reports', CarDamageReportsController::class)
+            ->except(['show'])
+            ->parameters(['car-damage-reports' => 'carDamageReport'])
+            ->middleware('permission:tenant-manage-cars');
 
         // Reservations
         Route::resource('reservations', ReservationsController::class)
-            ->only(['index', 'show', 'edit', 'update'])
+            ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
             ->middleware('permission:tenant-manage-reservations');
         Route::get('reservations/{reservation}/print', [ReservationsController::class, 'print'])
             ->middleware('permission:tenant-manage-reservations')
@@ -65,6 +73,12 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
         Route::post('contracts/extract', [ContractsController::class, 'extract'])
             ->middleware('permission:tenant-manage-reservations')
             ->name('contracts.extract');
+        Route::post('contracts/drivers/extract', [ContractsController::class, 'extractDriverDocument'])
+            ->middleware('permission:tenant-manage-reservations')
+            ->name('contracts.drivers.extract');
+        Route::get('contracts/{contract}/pdf', [ContractsController::class, 'pdf'])
+            ->middleware('permission:tenant-manage-reservations')
+            ->name('contracts.pdf');
         Route::resource('contracts', ContractsController::class)
             ->only(['index', 'create', 'store', 'show', 'edit', 'update'])
             ->middleware('permission:tenant-manage-reservations');
@@ -73,6 +87,15 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
         Route::resource('clients', ClientsController::class)
             ->only(['index', 'show'])
             ->middleware('permission:tenant-manage-clients');
+        Route::get('clients/{client}/documents', [ClientsController::class, 'documents'])
+            ->middleware('permission:tenant-manage-clients')
+            ->name('clients.documents');
+        Route::post('clients/{client}/documents/extract', [ClientsController::class, 'extractDocument'])
+            ->middleware('permission:tenant-manage-clients')
+            ->name('clients.documents.extract');
+        Route::post('clients/{client}/documents/save', [ClientsController::class, 'saveDocument'])
+            ->middleware('permission:tenant-manage-clients')
+            ->name('clients.documents.save');
         Route::patch('clients/{client}/suspend', [ClientsController::class, 'suspend'])
             ->middleware('permission:tenant-manage-clients')
             ->name('clients.suspend');
@@ -183,3 +206,5 @@ Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription']
             ->name('settings.stripe-connect.login-link');
 
     });
+
+

@@ -12,6 +12,7 @@ interface Car {
     description: string;
     fuel_type: string;
     image_url: string;
+    status?: string;
 }
 
 interface Props {
@@ -69,6 +70,13 @@ defineProps<Props>();
                     >${{ car.price_per_day }}</span
                 >
                 <span class="text-xs text-orange-100">{{ t('car_card.per_day') }}</span>
+            </div>
+
+            <div
+                v-if="car.status && car.status !== 'available'"
+                class="absolute top-4 left-4 rounded-xl bg-black/75 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-white"
+            >
+                {{ car.status }}
             </div>
 
             <!-- Gradient Overlay -->
@@ -140,7 +148,7 @@ defineProps<Props>();
                             d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                         ></path>
                     </svg>
-                    {{ t('car_card.book_now') }}
+                    {{ car.status && car.status !== 'available' ? 'Check Availability' : t('car_card.book_now') }}
                 </span>
             </button>
         </div>

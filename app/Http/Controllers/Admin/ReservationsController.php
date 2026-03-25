@@ -5,9 +5,13 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Reservation;
+use App\Models\Car;
+use App\Models\CarDamageCase;
+use App\Models\User;
 use App\Enums\ReservationStatus;
 use App\Enums\PaymentStatus;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -135,13 +139,114 @@ class ReservationsController extends Controller
         ]);
     }
 
+    public function create(Request $request): Response
+    {
+        $cars = $this->carOptions($request);
+
+        return Inertia::render('Admin/Reservations/Edit', [
+            'reservation' => null,
+            'clients' => $this->clientOptions($request),
+            'cars' => $cars,
+            'carDamagesByCar' => $this->serializeCarDamageCaseMap(collect($cars)->pluck('id')->all(), $request->user()),
+            'enums' => [
+                'statuses' => ReservationStatus::getMeta(),
+            ],
+        ]);
+    }
+
+    public function store(Request $request)
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer'],
+            'car_id' => ['required', 'integer'],
+            'start_date' => ['required', 'date'],
+            'end_date' => ['required', 'date', 'after_or_equal:start_date'],
+            'pickup_time' => ['nullable', 'date_format:H:i'],
+            'return_time' => ['nullable', 'date_format:H:i'],
+            'pickup_location' => ['nullable', 'string', 'max:255'],
+            'return_location' => ['nullable', 'string', 'max:255'],
+            'discount_amount' => ['nullable', 'numeric', 'min:0'],
+            'notes' => ['nullable', 'string'],
+            'status' => ['required', 'string', Rule::enum(ReservationStatus::class)],
+            'cancellation_reason' => ['nullable', 'string'],
+        ]);
+
+        if (config('app.demo_mode')) {
+            return redirect()
+                ->back()
+                ->with('restricted_action', 'This is a demo version. For security reasons, create, update, and delete actions are disabled.');
+        }
+
+        $user = $request->user();
+        $client = User::query()
+            ->where('tenant_id', $user?->tenant_id)
+            ->where('role', 'client')
+            ->findOrFail((int) $validated['user_id']);
+
+        $car = Car::query()
+            ->where('tenant_id', $user?->tenant_id)
+            ->with('branch:id')
+            ->findOrFail((int) $validated['car_id']);
+
+        abort_unless($this->branchAccess->canAccessBranchId($user, $car->branch_id), 403);
+
+        $start = Carbon::parse($validated['start_date']);
+        $end = Carbon::parse($validated['end_date']);
+        $this->ensureNoReservationConflict($car->id, $start, $end);
+
+        $discountAmount = (float) ($validated['discount_amount'] ?? 0);
+        $totalDays = $start->diffInDays($end) + 1;
+        $subtotal = (float) $car->price_per_day * $totalDays;
+        $taxAmount = round($subtotal * 0.21, 2);
+
+        $reservation = Reservation::create([
+            'tenant_id' => $user?->tenant_id,
+            'user_id' => $client->id,
+            'car_id' => $car->id,
+            'start_date' => $validated['start_date'],
+            'end_date' => $validated['end_date'],
+            'pickup_time' => $validated['pickup_time'] ?? '09:00',
+            'return_time' => $validated['return_time'] ?? '18:00',
+            'pickup_location' => $validated['pickup_location'] ?? null,
+            'return_location' => $validated['return_location'] ?? null,
+            'total_days' => $totalDays,
+            'daily_rate' => $car->price_per_day,
+            'subtotal' => $subtotal,
+            'tax_amount' => $taxAmount,
+            'discount_amount' => $discountAmount,
+            'total_amount' => max(0, $subtotal + $taxAmount - $discountAmount),
+            'status' => $validated['status'],
+            'notes' => $validated['notes'] ?? null,
+            'cancellation_reason' => $validated['status'] === ReservationStatus::CANCELLED->value
+                ? ($validated['cancellation_reason'] ?? null)
+                : null,
+            'cancelled_at' => $validated['status'] === ReservationStatus::CANCELLED->value ? now() : null,
+        ]);
+
+        $reservation->load(['user:id,name,email', 'car:id,branch_id,make,model,year,license_plate', 'contract:id,reservation_id']);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => 'Reservation created successfully.',
+                'reservation' => $this->reservationOptionPayload($reservation),
+            ], 201);
+        }
+
+        return redirect()
+            ->route('admin.reservations.show', [
+                'subdomain' => $request->route('subdomain'),
+                'reservation' => $reservation->id,
+            ])
+            ->with('success', 'Reservation created successfully.');
+    }
+
     /**
      * Display the specified reservation details.
      */
     public function show(Reservation $reservation): Response
     {
         abort_unless($this->canAccessReservation($reservation, request()->user()), 403);
-        $reservation->load(['user', 'car', 'payments']);
+        $reservation->load(['user', 'car', 'payments', 'contract']);
 
         return Inertia::render('Admin/Reservations/Show', [
             'reservation' => $reservation,
@@ -153,13 +258,16 @@ class ReservationsController extends Controller
     /**
      * Show the form for editing the specified reservation.
      */
-    public function edit(Reservation $reservation): Response
+    public function edit(Request $request, Reservation $reservation): Response
     {
         abort_unless($this->canAccessReservation($reservation, request()->user()), 403);
         $reservation->load(['user:id,name,email', 'car:id,make,model,year,license_plate']);
 
         return Inertia::render('Admin/Reservations/Edit', [
             'reservation' => $reservation,
+            'clients' => [],
+            'cars' => [],
+            'carDamagesByCar' => $reservation->car?->id ? $this->serializeCarDamageCaseMap([(int) $reservation->car->id], $request->user()) : [],
             'enums' => [
                 'statuses' => ReservationStatus::getMeta(),
             ],
@@ -265,5 +373,153 @@ class ReservationsController extends Controller
         $reservation->loadMissing('car:id,branch_id');
 
         return $this->branchAccess->canAccessBranchId($user, $reservation->car?->branch_id ? (int) $reservation->car->branch_id : null);
+    }
+
+    private function clientOptions(Request $request)
+    {
+        return User::query()
+            ->where('tenant_id', $request->user()?->tenant_id)
+            ->where('role', 'client')
+            ->orderBy('name')
+            ->get(['id', 'name', 'email'])
+            ->map(fn (User $client) => [
+                'id' => $client->id,
+                'name' => $client->name,
+                'email' => $client->email,
+            ])
+            ->values();
+    }
+
+    private function carOptions(Request $request)
+    {
+        $query = Car::query()
+            ->where('tenant_id', $request->user()?->tenant_id)
+            ->with('branch:id,name')
+            ->orderBy('make')
+            ->orderBy('model');
+
+        $this->applyReservationBranchScopeToCars($query, $request->user());
+
+        return $query->get(['id', 'branch_id', 'make', 'model', 'year', 'license_plate', 'price_per_day'])
+            ->map(fn (Car $car) => [
+                'id' => $car->id,
+                'label' => sprintf('%s %s %s', $car->year, $car->make, $car->model),
+                'license_plate' => $car->license_plate,
+                'branch_name' => $car->branch?->name,
+                'price_per_day' => (float) $car->price_per_day,
+            ])
+            ->values();
+    }
+
+    private function applyReservationBranchScopeToCars($query, $user): void
+    {
+        $canAccessAllBranches = $this->branchAccess->canAccessAllBranches($user);
+        if ($canAccessAllBranches) {
+            return;
+        }
+
+        $userBranchId = (int) ($user?->branch_id ?? 0);
+        if ($userBranchId <= 0) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        $query->where('branch_id', $userBranchId);
+    }
+
+    private function ensureNoReservationConflict(int $carId, Carbon $start, Carbon $end, ?int $ignoreReservationId = null): void
+    {
+        $query = Reservation::query()
+            ->where('car_id', $carId)
+            ->whereIn('status', [
+                ReservationStatus::PENDING->value,
+                ReservationStatus::CONFIRMED->value,
+                ReservationStatus::ACTIVE->value,
+            ])
+            ->whereDate('start_date', '<=', $end->toDateString())
+            ->whereDate('end_date', '>=', $start->toDateString());
+
+        if ($ignoreReservationId) {
+            $query->whereKeyNot($ignoreReservationId);
+        }
+
+        if ($query->exists()) {
+            throw ValidationException::withMessages([
+                'start_date' => 'This car already has a reservation in the selected date range.',
+                'end_date' => 'Please choose another date range.',
+            ]);
+        }
+    }
+
+    private function reservationOptionPayload(Reservation $reservation): array
+    {
+        return [
+            'id' => $reservation->id,
+            'reservation_number' => $reservation->reservation_number,
+            'label' => "{$reservation->reservation_number} - {$reservation->user?->name}",
+            'car' => $reservation->car ? "{$reservation->car->year} {$reservation->car->make} {$reservation->car->model}" : null,
+            'car_id' => $reservation->car?->id,
+            'car_details' => $reservation->car ? "{$reservation->car->year} {$reservation->car->make} {$reservation->car->model}" : null,
+            'plate_number' => $reservation->car?->license_plate,
+            'branch_id' => $reservation->car?->branch_id,
+            'user_id' => $reservation->user?->id,
+            'user_name' => $reservation->user?->name,
+            'start_date' => optional($reservation->start_date)->toDateString(),
+            'end_date' => optional($reservation->end_date)->toDateString(),
+            'total_amount' => $reservation->total_amount,
+            'has_contract' => (bool) $reservation->contract,
+        ];
+    }
+
+    private function serializeCarDamageCaseMap(array $carIds, $user): array
+    {
+        $normalizedIds = collect($carIds)
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn (int $id) => $id > 0)
+            ->unique()
+            ->values()
+            ->all();
+
+        if ($normalizedIds === []) {
+            return [];
+        }
+
+        $zoneLabels = \App\Support\CarDamageCatalog::zoneLabelMap();
+        $viewLabels = collect(\App\Support\CarDamageCatalog::viewSides())
+            ->mapWithKeys(fn (array $option) => [$option['value'] => $option['label']])
+            ->all();
+        $damageTypeLabels = collect(\App\Support\CarDamageCatalog::damageTypes())
+            ->mapWithKeys(fn (array $option) => [$option['value'] => $option['label']])
+            ->all();
+        $severityLabels = collect(\App\Support\CarDamageCatalog::severityLevels())
+            ->mapWithKeys(fn (array $option) => [$option['value'] => $option['label']])
+            ->all();
+
+        $query = CarDamageCase::query()
+            ->whereIn('car_id', $normalizedIds)
+            ->where('status', 'open')
+            ->orderBy('zone_code')
+            ->orderBy('id');
+        $this->branchAccess->applyToQuery($query, $user, null, 'branch_id');
+
+        $grouped = [];
+        foreach ($query->get() as $case) {
+            $grouped[$case->car_id][] = [
+                'id' => $case->id,
+                'zone_code' => $case->zone_code,
+                'zone_label' => $zoneLabels[$case->zone_code] ?? $case->zone_code,
+                'view_side' => $case->view_side,
+                'view_side_label' => $viewLabels[$case->view_side] ?? $case->view_side,
+                'damage_type' => $case->damage_type,
+                'damage_type_label' => $damageTypeLabels[$case->damage_type] ?? $case->damage_type,
+                'severity' => $case->severity,
+                'severity_label' => $severityLabels[$case->severity] ?? $case->severity,
+                'quantity' => (int) $case->quantity,
+                'notes' => $case->notes,
+                'first_detected_at' => optional($case->first_detected_at)?->format('Y-m-d H:i'),
+            ];
+        }
+
+        return $grouped;
     }
 }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useTrans } from '@/composables/useTrans';
 import ClientLayout from '@/layouts/ClientLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { show } from '@/routes/client/reservations';
@@ -23,23 +24,24 @@ const props = defineProps<{
         }>;
         links: Array<{ url: string | null; label: string; active: boolean }>;
     };
-    currency: { symbol: string; code: string }
+    currency: { symbol: string; code: string };
 }>();
 
+const { t } = useTrans();
 
 const navigateToReservation = (id: number) => {
     router.visit(show(id).url);
 };
-
 </script>
 
 <template>
-    <Head title="Reservations" />
+    <Head :title="t('client_pages.reservations.index.head_title')" />
     <ClientLayout>
-        <!-- Main -->
         <main class="flex-1 space-y-6 p-8">
             <div class="flex items-center justify-between gap-4">
-                <h1 class="text-2xl font-semibold">Reservations</h1>
+                <h1 class="text-2xl font-semibold">
+                    {{ t('client_pages.reservations.index.title') }}
+                </h1>
             </div>
 
             <div class="overflow-x-auto rounded-md border">
@@ -54,22 +56,38 @@ const navigateToReservation = (id: number) => {
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Car
+                                {{
+                                    t(
+                                        'client_pages.reservations.index.table.car',
+                                    )
+                                }}
                             </th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Dates
+                                {{
+                                    t(
+                                        'client_pages.reservations.index.table.dates',
+                                    )
+                                }}
                             </th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Total
+                                {{
+                                    t(
+                                        'client_pages.reservations.index.table.total',
+                                    )
+                                }}
                             </th>
                             <th
                                 class="px-4 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
                             >
-                                Status
+                                {{
+                                    t(
+                                        'client_pages.reservations.index.table.status',
+                                    )
+                                }}
                             </th>
                         </tr>
                     </thead>
@@ -77,8 +95,8 @@ const navigateToReservation = (id: number) => {
                         <tr
                             v-for="res in props.reservations.data"
                             :key="res.id"
-                            @click="navigateToReservation(res.id)"
                             class="cursor-pointer transition-colors hover:bg-gray-50"
+                            @click="navigateToReservation(res.id)"
                         >
                             <td class="px-4 py-3">
                                 <div class="font-medium">
@@ -90,7 +108,7 @@ const navigateToReservation = (id: number) => {
                                     {{
                                         res.car
                                             ? `${res.car.year} ${res.car.make} ${res.car.model}`
-                                            : '—'
+                                            : '-'
                                     }}
                                 </div>
                                 <div class="text-xs text-muted-foreground">
@@ -104,31 +122,34 @@ const navigateToReservation = (id: number) => {
                                             res.start_date,
                                         ).toLocaleDateString()
                                     }}
-                                    →
+                                    ->
                                     {{
                                         new Date(
                                             res.end_date,
                                         ).toLocaleDateString()
                                     }}
                                 </div>
-                                <!-- duration in days-->
                                 <div class="text-xs text-muted-foreground">
-                                    {{ res.total_days }} days
+                                    {{
+                                        t(
+                                            'client_pages.reservations.index.days',
+                                            { count: res.total_days },
+                                        )
+                                    }}
                                 </div>
                             </td>
                             <td class="px-4 py-3">
-                                {{ props.currency.symbol }} {{ Number(res.total_amount).toFixed(2) }}
+                                {{ props.currency.symbol }}
+                                {{ Number(res.total_amount).toFixed(2) }}
                             </td>
-                            <td class="px-4 py-3">
-                                {{ res.status }}
-                            </td>
+                            <td class="px-4 py-3">{{ res.status }}</td>
                         </tr>
                         <tr v-if="props.reservations.data.length === 0">
                             <td
                                 colspan="7"
                                 class="px-4 py-6 text-center text-gray-500"
                             >
-                                No reservations found.
+                                {{ t('client_pages.reservations.index.empty') }}
                             </td>
                         </tr>
                     </tbody>

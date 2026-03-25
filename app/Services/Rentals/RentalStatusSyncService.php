@@ -17,20 +17,14 @@ class RentalStatusSyncService
         $now = now();
         $reserveBeforeHours = $this->reserveBeforeHours();
 
-        $toActivate = Reservation::withoutGlobalScope('tenant')
-            ->where('status', ReservationStatus::CONFIRMED->value)
-            ->whereRaw("TIMESTAMP(start_date, COALESCE(pickup_time, '09:00:00')) <= ?", [$now->toDateTimeString()])
-            ->get(['id', 'car_id']);
-
         $toComplete = Reservation::withoutGlobalScope('tenant')
             ->where('status', ReservationStatus::ACTIVE->value)
             ->whereRaw("TIMESTAMP(end_date, COALESCE(return_time, '18:00:00')) < ?", [$now->toDateTimeString()])
             ->get(['id', 'car_id']);
 
-        $activated = $toActivate->count();
+        $activated = 0;
         $completed = $toComplete->count();
-        $carIds = $toActivate->pluck('car_id')
-            ->merge($toComplete->pluck('car_id'))
+        $carIds = $toComplete->pluck('car_id')
             ->filter()
             ->map(fn ($id) => (int) $id)
             ->unique()
@@ -38,15 +32,6 @@ class RentalStatusSyncService
             ->all();
 
         if (!$dryRun) {
-            if ($activated > 0) {
-                Reservation::withoutGlobalScope('tenant')
-                    ->whereIn('id', $toActivate->pluck('id')->all())
-                    ->update([
-                        'status' => ReservationStatus::ACTIVE->value,
-                        'updated_at' => $now,
-                    ]);
-            }
-
             if ($completed > 0) {
                 Reservation::withoutGlobalScope('tenant')
                     ->whereIn('id', $toComplete->pluck('id')->all())
@@ -154,4 +139,3 @@ class RentalStatusSyncService
         return max(0, (int) config('rentals.reserve_before_hours', 24));
     }
 }
-

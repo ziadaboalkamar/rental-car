@@ -6,9 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Enums\CarColor;
 use App\Enums\CarStatus;
 use App\Enums\FuelType;
-use App\Models\Branch;
 use App\Models\Car;
+use App\Models\Reservation;
 use App\Support\BranchAccess;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -247,6 +248,91 @@ class CarsController extends Controller
                     'color' => $status->color()
                 ], CarStatus::cases()),
             ],
+        ]);
+    }
+
+    public function calendar(Request $request, Car $car): Response
+    {
+        abort_unless($this->branchAccess->canAccessBranchId($request->user(), $car->branch_id), 403);
+
+        $request->validate([
+            'month' => ['nullable', 'date_format:Y-m'],
+            'view' => ['nullable', Rule::in(['month', 'next_30_days', 'booked_only'])],
+        ]);
+
+        $view = $request->string('view')->toString() ?: 'month';
+        $selectedMonth = $request->string('month')->toString();
+        $month = $selectedMonth !== ''
+            ? Carbon::createFromFormat('Y-m', $selectedMonth)->startOfMonth()
+            : now()->startOfMonth();
+
+        $monthStart = $month->copy()->startOfMonth();
+        $monthEnd = $month->copy()->endOfMonth();
+        $gridStart = $month->copy()->startOfWeek(Carbon::SUNDAY);
+        $gridEnd = $month->copy()->endOfWeek(Carbon::SATURDAY);
+        $today = now()->startOfDay();
+
+        [$rangeStart, $rangeEnd] = match ($view) {
+            'next_30_days' => [$today->copy(), $today->copy()->addDays(29)->endOfDay()],
+            default => [$monthStart->copy(), $monthEnd->copy()->endOfDay()],
+        };
+
+        $reservations = Reservation::query()
+            ->with(['user:id,name,email'])
+            ->where('car_id', $car->id)
+            ->whereDate('start_date', '<=', $rangeEnd->toDateString())
+            ->whereDate('end_date', '>=', $rangeStart->toDateString())
+            ->orderBy('start_date')
+            ->get()
+            ->map(function (Reservation $reservation) {
+                $status = $reservation->status;
+                $statusValue = match (true) {
+                    $status instanceof \BackedEnum => (string) $status->value,
+                    $status instanceof \UnitEnum => $status->name,
+                    is_string($status) => $status,
+                    $status === null => '',
+                    default => (string) $status,
+                };
+
+                return [
+                    'id' => $reservation->id,
+                    'reservation_number' => $reservation->reservation_number,
+                    'status' => $statusValue,
+                    'status_label' => ucfirst(str_replace('_', ' ', $statusValue)),
+                    'client_name' => $reservation->user?->name,
+                    'start_date' => optional($reservation->start_date)->toDateString(),
+                    'end_date' => optional($reservation->end_date)->toDateString(),
+                    'pickup_time' => optional($reservation->pickup_time)->format('H:i'),
+                    'return_time' => optional($reservation->return_time)->format('H:i'),
+                ];
+            })
+            ->values();
+
+        return Inertia::render('Admin/Cars/Calendar', [
+            'car' => [
+                'id' => $car->id,
+                'make' => $car->make,
+                'model' => $car->model,
+                'year' => $car->year,
+                'license_plate' => $car->license_plate,
+                'branch_name' => $car->branch?->name,
+            ],
+            'month' => [
+                'value' => $month->format('Y-m'),
+                'label' => $month->format('F Y'),
+                'starts_at' => $monthStart->toDateString(),
+                'ends_at' => $monthEnd->toDateString(),
+                'grid_starts_at' => $gridStart->toDateString(),
+                'grid_ends_at' => $gridEnd->toDateString(),
+                'previous' => $month->copy()->subMonth()->format('Y-m'),
+                'next' => $month->copy()->addMonth()->format('Y-m'),
+            ],
+            'view' => [
+                'value' => $view,
+                'window_starts_at' => $rangeStart->toDateString(),
+                'window_ends_at' => $rangeEnd->toDateString(),
+            ],
+            'reservations' => $reservations,
         ]);
     }
 

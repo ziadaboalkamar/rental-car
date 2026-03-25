@@ -149,6 +149,16 @@ class Reservation extends Model
         return $this->hasOne(Contract::class);
     }
 
+    public function damageReports(): HasMany
+    {
+        return $this->hasMany(CarDamageReport::class);
+    }
+
+    public function openedDamageCases(): HasMany
+    {
+        return $this->hasMany(CarDamageCase::class, 'opened_in_reservation_id');
+    }
+
     /**
      * Get the formatted total amount attribute.
      *
@@ -197,7 +207,7 @@ class Reservation extends Model
      */
     public function scopeActive($query)
     {
-        return $query->where('status', ReservationStatus::ACTIVE);
+        return $query->where('status', ReservationStatus::ACTIVE->value);
     }
 
     /**

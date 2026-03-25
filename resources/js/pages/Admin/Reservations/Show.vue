@@ -48,7 +48,10 @@ function fmtMoney(n?: number | string) {
           Reservation {{ reservation?.reservation_number }}
         </h1>
         <div class="flex gap-2">
-          <Link :href="`/admin/contracts/create?reservation_id=${reservation.id}`">
+          <Link v-if="reservation.contract?.id" :href="`/admin/contracts/${reservation.contract.id}`">
+            <Button variant="outline">Show Contract</Button>
+          </Link>
+          <Link v-else :href="`/admin/contracts/create?reservation_id=${reservation.id}`">
             <Button variant="outline">Create Contract</Button>
           </Link>
           <Link v-if="subdomain" :href="index(subdomain).url">

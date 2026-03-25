@@ -21,7 +21,7 @@ import { activate } from '@/routes/admin/clients';
 
 const props = defineProps<{
   client: { id: number; name: string; email: string; is_active: boolean; created_at?: string };
-  stats: { total_reservations: number; total_payments: number; total_spent: number };
+  stats: { total_reservations: number; total_payments: number; total_spent: number; total_documents?: number };
   reservations: {
     data: Array<{
       id: number;
@@ -49,6 +49,7 @@ const props = defineProps<{
     links: Array<{ url: string | null; label: string; active: boolean }>;
   };
   currency: { symbol: string; code: string }
+  actions?: { documents?: string }
 }>()
 
 const showSuspendDialog = ref(false);
@@ -118,18 +119,30 @@ const statusStyle = computed(() => {
       </div>
 
       <!-- Stats -->
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div class="rounded-md border p-4">
-          <div class="text-sm text-muted-foreground">Total Spent</div>
-          <div class="text-xl font-semibold">{{ fmtMoney(stats.total_spent) }}</div>
-        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div class="rounded-md border p-4">
+            <div class="text-sm text-muted-foreground">Total Spent</div>
+            <div class="text-xl font-semibold">{{ fmtMoney(stats.total_spent) }}</div>
+          </div>
         <div class="rounded-md border p-4">
           <div class="text-sm text-muted-foreground">Reservations</div>
           <div class="text-xl font-semibold">{{ stats.total_reservations }}</div>
         </div>
-        <div class="rounded-md border p-4">
-          <div class="text-sm text-muted-foreground">Payments</div>
-          <div class="text-xl font-semibold">{{ stats.total_payments }}</div>
+          <div class="rounded-md border p-4">
+            <div class="text-sm text-muted-foreground">Payments</div>
+            <div class="text-xl font-semibold">{{ stats.total_payments }}</div>
+          </div>
+        </div>
+
+      <div class="rounded-md border p-4">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <div class="text-sm text-muted-foreground">Client Documents</div>
+            <div class="text-xl font-semibold">{{ stats.total_documents ?? 0 }}</div>
+          </div>
+          <Link v-if="actions?.documents" :href="actions.documents">
+            <Button variant="outline">Manage Documents</Button>
+          </Link>
         </div>
       </div>
 

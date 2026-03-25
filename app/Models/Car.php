@@ -142,6 +142,16 @@ class Car extends Model
         return $this->hasMany(CarViolation::class);
     }
 
+    public function damageReports(): HasMany
+    {
+        return $this->hasMany(CarDamageReport::class);
+    }
+
+    public function damageCases(): HasMany
+    {
+        return $this->hasMany(CarDamageCase::class)->orderBy('zone_code')->orderBy('id');
+    }
+
     public function coupons(): HasMany
     {
         return $this->hasMany(Coupon::class);
@@ -169,8 +179,8 @@ class Car extends Model
     {
         $query = $this->reservations()
             ->whereIn('status', [
-                ReservationStatus::CONFIRMED,
-                ReservationStatus::ACTIVE
+                ReservationStatus::CONFIRMED->value,
+                ReservationStatus::ACTIVE->value,
             ])
             ->betweenDates($startDate, $endDate);
 

@@ -14,6 +14,18 @@ use Illuminate\Http\Request;
 
 class HomePagesController extends Controller
 {
+    /**
+     * @return array<int, string>
+     */
+    private function publicFleetStatuses(): array
+    {
+        return [
+            CarStatus::AVAILABLE->value,
+            CarStatus::RESERVED->value,
+            CarStatus::RENTED->value,
+        ];
+    }
+
     public function index()
     {
         if (!TenantContext::get()) {
@@ -58,8 +70,13 @@ class HomePagesController extends Controller
             return inertia('SuperAdmin/landing/Landing', compact('landingSettings', 'plans', 'tenantLogos'));
         }
 
-        $homeCars = Car::where('status', CarStatus::AVAILABLE)
+        $homeCars = Car::whereIn('status', $this->publicFleetStatuses())
             ->select('id', 'make', 'model', 'year', 'price_per_day', 'description', 'fuel_type')
+            ->orderByRaw("CASE WHEN status = ? THEN 0 WHEN status = ? THEN 1 WHEN status = ? THEN 2 ELSE 3 END", [
+                CarStatus::AVAILABLE->value,
+                CarStatus::RESERVED->value,
+                CarStatus::RENTED->value,
+            ])
             ->orderByDesc('year')
             ->limit(6)
             ->get();
@@ -69,7 +86,7 @@ class HomePagesController extends Controller
 
     public function fleet(Request $request)
     {
-        $query = Car::where('status', CarStatus::AVAILABLE)
+        $query = Car::whereIn('status', $this->publicFleetStatuses())
             ->select('id', 'make', 'model', 'year', 'price_per_day', 'description', 'fuel_type');
 
         // Search functionality
@@ -106,20 +123,27 @@ class HomePagesController extends Controller
             $query->where('price_per_day', '<=', $request->max_price);
         }
 
-        $cars = $query->paginate(10)->withQueryString();
+        $cars = $query
+            ->orderByRaw("CASE WHEN status = ? THEN 0 WHEN status = ? THEN 1 WHEN status = ? THEN 2 ELSE 3 END", [
+                CarStatus::AVAILABLE->value,
+                CarStatus::RESERVED->value,
+                CarStatus::RENTED->value,
+            ])
+            ->paginate(10)
+            ->withQueryString();
 
         // Get filter options
-        $makes = Car::where('status', CarStatus::AVAILABLE)
+        $makes = Car::whereIn('status', $this->publicFleetStatuses())
             ->distinct()
             ->pluck('make')
             ->toArray();
 
-        $fuelTypes = Car::where('status', CarStatus::AVAILABLE)
+        $fuelTypes = Car::whereIn('status', $this->publicFleetStatuses())
             ->distinct()
             ->pluck('fuel_type')
             ->toArray();
 
-        $years = Car::where('status', CarStatus::AVAILABLE)
+        $years = Car::whereIn('status', $this->publicFleetStatuses())
             ->distinct()
             ->pluck('year')
             ->toArray();
