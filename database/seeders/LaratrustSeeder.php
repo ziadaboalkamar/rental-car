@@ -35,7 +35,7 @@ class LaratrustSeeder extends Seeder
         ];
 
         foreach ($permissions as $perm) {
-            Permission::firstOrCreate(
+            Permission::withoutGlobalScope('tenant')->firstOrCreate(
                 ['name' => $perm['name']],
                 $perm
             );
@@ -44,36 +44,40 @@ class LaratrustSeeder extends Seeder
 
     private function createRoles(): void
     {
-        $superAdmin = Role::firstOrCreate(
+        $superAdmin = Role::withoutGlobalScope('tenant')->firstOrCreate(
             ['name' => 'super-admin'],
             ['display_name' => 'Super Administrator', 'description' => 'Full access to Super Admin area']
         );
-        $superAdmin->syncPermissions(Permission::all());
+        $superAdmin->syncPermissions(Permission::withoutGlobalScope('tenant')->pluck('id'));
 
-        Role::firstOrCreate(
+        Role::withoutGlobalScope('tenant')->firstOrCreate(
             ['name' => 'manager'],
             [
                 'display_name' => 'Manager',
                 'description' => 'Can manage tenants and view reports',
             ]
         )->syncPermissions(
-            Permission::whereIn('name', ['view-dashboard', 'manage-tenants', 'manage-cars', 'manage-reservations', 'manage-revenue', 'manage-roles', 'manage-permissions'])->pluck('id')
+            Permission::withoutGlobalScope('tenant')
+                ->whereIn('name', ['view-dashboard', 'manage-tenants', 'manage-cars', 'manage-reservations', 'manage-revenue', 'manage-roles', 'manage-permissions'])
+                ->pluck('id')
         );
 
-        Role::firstOrCreate(
+        Role::withoutGlobalScope('tenant')->firstOrCreate(
             ['name' => 'sub-admin'],
             [
                 'display_name' => 'Sub Admin',
                 'description' => 'Can manage roles and assign permissions',
             ]
         )->syncPermissions(
-            Permission::whereIn('name', ['view-dashboard', 'manage-roles', 'manage-permissions'])->pluck('id')
+            Permission::withoutGlobalScope('tenant')
+                ->whereIn('name', ['view-dashboard', 'manage-roles', 'manage-permissions'])
+                ->pluck('id')
         );
     }
 
     private function assignSuperAdminRole(): void
     {
-        $role = Role::where('name', 'super-admin')->first();
+        $role = Role::withoutGlobalScope('tenant')->where('name', 'super-admin')->first();
         if (!$role) {
             return;
         }

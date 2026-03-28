@@ -37,6 +37,16 @@ import { type NavItem } from '@/types';
 
 const page = usePage();
 const { t } = useTrans();
+const authPermissions = computed<string[]>(() =>
+    Array.isArray(page.props.auth?.permissions) ? page.props.auth.permissions : [],
+);
+const hasFullSuperAdminAccess = computed(
+    () => page.props.auth?.user?.role === 'super_admin',
+);
+const hasPermission = (permission?: string) =>
+    !permission ||
+    hasFullSuperAdminAccess.value ||
+    authPermissions.value.includes(permission);
 
 const superAdminNav = computed<NavItem[]>(() => [
     {
@@ -61,7 +71,7 @@ const superAdminNav = computed<NavItem[]>(() => [
             { title: t('dashboard.sidebar.super_admin.users'), href: '/superadmin/users', icon: UserCircle, permission: 'manage-users' },
             { title: t('dashboard.sidebar.super_admin.roles'), href: '/superadmin/roles', icon: Shield, permission: 'manage-roles' },
             { title: t('dashboard.sidebar.super_admin.tenants'), href: '/superadmin/tenants', icon: Users, permission: 'manage-tenants' },
-        ].filter(item => !item.permission || page.props.auth.permissions.includes(item.permission)),
+        ].filter(item => hasPermission(item.permission)),
     },
     {
         title: t('dashboard.sidebar.super_admin.product_management'),
@@ -111,14 +121,14 @@ const filteredNav = computed(() => {
         // Filter children based on permissions
         if (newItem.children) {
             newItem.children = newItem.children.filter(child => {
-                return !child.permission || page.props.auth.permissions.includes(child.permission);
+                return hasPermission(child.permission);
             });
         }
         
         return newItem;
     }).filter(item => {
         // If parent has a permission, check it
-        if (item.permission && !page.props.auth.permissions.includes(item.permission)) {
+        if (!hasPermission(item.permission)) {
             return false;
         }
         
