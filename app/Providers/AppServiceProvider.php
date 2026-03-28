@@ -10,6 +10,7 @@ use App\Core\StripeSettings;
 use App\Models\SiteSetting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 use Throwable;
@@ -31,6 +32,11 @@ class AppServiceProvider extends ServiceProvider
     {
         // Avoid stale/locked public/hot forcing broken dev-server URLs in production-like runs.
         Vite::useHotFile(storage_path('framework/vite.hot'));
+
+        if ($this->app->environment('production')) {
+            URL::forceRootUrl(config('app.url'));
+            URL::forceScheme('https');
+        }
 
         $this->applyStripeSettingsFromDatabase();
         $this->applyOpenAiSettingsFromDatabase();

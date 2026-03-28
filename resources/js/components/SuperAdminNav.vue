@@ -40,8 +40,24 @@ const { t } = useTrans();
 const authPermissions = computed<string[]>(() =>
     Array.isArray(page.props.auth?.permissions) ? page.props.auth.permissions : [],
 );
+const normalizedPath = computed(() => String(page.url ?? '').replace(/^\/(ar|en)(?=\/|$)/, '') || '/');
+const normalizedRole = computed(() => {
+    const role = page.props.auth?.user?.role;
+
+    if (typeof role === 'string') {
+        return role;
+    }
+
+    if (role && typeof role === 'object') {
+        return String(role.value ?? role.name ?? '');
+    }
+
+    return '';
+});
 const hasFullSuperAdminAccess = computed(
-    () => page.props.auth?.user?.role === 'super_admin',
+    () =>
+        normalizedRole.value === 'super_admin' ||
+        normalizedPath.value.startsWith('/superadmin'),
 );
 const hasPermission = (permission?: string) =>
     !permission ||

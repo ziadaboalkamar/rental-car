@@ -31,6 +31,11 @@ defineProps<{
 const page = usePage<any>();
 const { t } = useTrans();
 const currentTenant = computed(() => page.props.current_tenant);
+const baseProtocol = computed(() =>
+    typeof window !== 'undefined' ? window.location.protocol : 'https:',
+);
+const buildUrl = (host: string, path: string) =>
+    `${baseProtocol.value}//${host}${path}`;
 
 const loginAction = computed(() => {
     const slug = currentTenant.value?.slug;
@@ -323,7 +328,7 @@ const isDemoOpen = ref(false);
 
                         <div class="grid grid-cols-2 gap-4">
                             <a
-                                :href="`http://${page.props.app_url_base}/auth/google/redirect?tenant=${currentTenant.slug}`"
+                                :href="buildUrl(page.props.app_url_base, `/auth/google/redirect?tenant=${currentTenant.slug}`)"
                                 class="flex h-11 items-center justify-center rounded-lg border border-gray-300 bg-white font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50"
                             >
                                 <svg class="mr-2 h-5 w-5" viewBox="0 0 24 24">
@@ -335,7 +340,7 @@ const isDemoOpen = ref(false);
                                 Google
                             </a>
                             <a
-                                :href="`http://${page.props.app_url_base}/auth/apple/redirect?tenant=${currentTenant.slug}`"
+                                :href="buildUrl(page.props.app_url_base, `/auth/apple/redirect?tenant=${currentTenant.slug}`)"
                                 class="flex h-11 items-center justify-center rounded-lg border border-gray-300 bg-black font-semibold text-white shadow-sm transition hover:bg-gray-800"
                             >
                                 <svg class="mr-2 h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
