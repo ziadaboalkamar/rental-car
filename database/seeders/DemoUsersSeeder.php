@@ -19,7 +19,7 @@ class DemoUsersSeeder extends Seeder
         $tenantId = Tenant::query()->where('is_active', true)->value('id');
 
         // Admin user
-        User::query()->updateOrCreate(
+        User::query()->withoutGlobalScope('tenant')->updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Admin User',
@@ -32,7 +32,7 @@ class DemoUsersSeeder extends Seeder
         );
 
         // Client user
-        User::query()->updateOrCreate(
+        User::query()->withoutGlobalScope('tenant')->updateOrCreate(
             ['email' => 'client@example.com'],
             [
                 'name' => 'Client User',

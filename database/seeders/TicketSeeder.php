@@ -16,7 +16,9 @@ class TicketSeeder extends Seeder
     public function run(): void
     {
 
-        $users = User::where('role', UserRole::CLIENT)->get();
+        $users = User::withoutGlobalScope('tenant')
+            ->where('role', UserRole::CLIENT)
+            ->get();
 
         // Client Tickets (Authenticated Users)
         $this->createClientTickets($users);

@@ -88,7 +88,7 @@ class ClientsSeeder extends Seeder
         ];
 
         foreach ($users as $userData) {
-            User::firstOrCreate(
+            User::withoutGlobalScope('tenant')->firstOrCreate(
                 ['email' => $userData['email']],
                 $userData
             );
