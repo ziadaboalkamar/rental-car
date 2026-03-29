@@ -565,6 +565,8 @@ class RegisteredUserController extends Controller
 
     public function checkoutSuccess(Request $request): RedirectResponse
     {
+            abort(500, 'checkoutSuccess-hit');
+
         if (TenantContext::id() && !$this->isExistingTenantPlanFlow($request)) {
             return $this->redirectToTenantRegister();
         }
