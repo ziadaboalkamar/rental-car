@@ -565,36 +565,18 @@ class RegisteredUserController extends Controller
 
     public function checkoutSuccess(Request $request): RedirectResponse
     {
-        \Log::info('checkoutSuccess entered', [
-    'full_url' => $request->fullUrl(),
-    'session_id_query' => $request->query('session_id'),
-    'expected_checkout_session_id' => $request->session()->get(self::CHECKOUT_SESSION_KEY),
-    'subscription_txn_id' => $request->session()->get(self::SUBSCRIPTION_TXN_SESSION_KEY),
-    'has_registration_session' => $request->session()->has(self::REGISTRATION_SESSION_KEY),
-    'has_plan_session' => $request->session()->has(self::PLAN_SELECTION_SESSION_KEY),
-]);
-\Log::info('checkoutSuccess server vars', [
-    'request_uri' => $request->server('REQUEST_URI'),
-    'query_string' => $request->server('QUERY_STRING'),
-]);
-
-
         if (TenantContext::id() && !$this->isExistingTenantPlanFlow($request)) {
             return $this->redirectToTenantRegister();
         }
 
-        $request->validate([
-            'session_id' => ['required', 'string', 'max:255'],
-        ]);
+        $checkoutSessionId = $this->requestQueryValue($request, 'session_id');
+        if ($checkoutSessionId === null || mb_strlen($checkoutSessionId) > 255) {
+            return to_route($this->authRouteName('register.checkout'))->with('error', 'Invalid checkout session.');
+        }
 
         $expectedCheckoutSessionId = $request->session()->get(self::CHECKOUT_SESSION_KEY);
-        if (!$expectedCheckoutSessionId || $request->string('session_id')->toString() !== $expectedCheckoutSessionId) {
-            \Log::warning('checkoutSuccess invalid session', [
-                    'query_session_id' => $request->string('session_id')->toString(),
-                    'expected_checkout_session_id' => $expectedCheckoutSessionId,
-                ]);
-
-        return to_route($this->authRouteName('register.checkout'))->with('error', 'Invalid checkout session.');
+        if (!$expectedCheckoutSessionId || $checkoutSessionId !== $expectedCheckoutSessionId) {
+            return to_route($this->authRouteName('register.checkout'))->with('error', 'Invalid checkout session.');
         }
 
         $stripeProvider = null;
@@ -622,7 +604,7 @@ class RegisteredUserController extends Controller
         try {
             $stripe = new \Stripe\StripeClient($stripeSecret);
             $checkoutSession = $stripe->checkout->sessions->retrieve(
-                $request->string('session_id')->toString(),
+                $checkoutSessionId,
                 [
                     'expand' => [
                         'payment_intent.payment_method',
@@ -647,14 +629,14 @@ class RegisteredUserController extends Controller
         $lineItems = [];
         try {
             $lineItemsResponse = $stripe->checkout->sessions->allLineItems(
-                $request->string('session_id')->toString(),
+                $checkoutSessionId,
                 ['limit' => 100]
             );
             $lineItems = is_array($lineItemsResponse->data ?? null) ? $lineItemsResponse->data : [];
         } catch (Throwable $e) {
             Log::warning('Could not fetch Stripe checkout line items', [
                 'message' => $e->getMessage(),
-                'session_id' => (string) $request->string('session_id'),
+                'session_id' => $checkoutSessionId,
             ]);
         }
 
@@ -1843,6 +1825,29 @@ class RegisteredUserController extends Controller
         $normalizedNational = (string) $parsed->getNationalNumber();
 
         return [$e164, $dialCode, $normalizedNational];
+    }
+
+    private function requestQueryValue(Request $request, string $key): ?string
+    {
+        $value = trim((string) $request->query($key, ''));
+        if ($value !== '') {
+            return $value;
+        }
+
+        $requestUri = (string) $request->server('REQUEST_URI', '');
+        if ($requestUri === '') {
+            return null;
+        }
+
+        $query = parse_url($requestUri, PHP_URL_QUERY);
+        if (!is_string($query) || $query === '') {
+            return null;
+        }
+
+        parse_str($query, $params);
+        $fallback = trim((string) ($params[$key] ?? ''));
+
+        return $fallback !== '' ? $fallback : null;
     }
 
     private function ensureTenantAdminFullAccess(User $user, ?Tenant $tenant = null): void

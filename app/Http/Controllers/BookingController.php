@@ -661,7 +661,7 @@ class BookingController extends Controller
             ])->with('error', 'Stripe verification is not available.');
         }
 
-        $sessionId = trim((string) $request->query('session_id', ''));
+        $sessionId = $this->requestQueryValue($request, 'session_id') ?? '';
         if ($sessionId === '') {
             return redirect()->route('tenant.booking.confirmation', [
                 'subdomain' => $tenantSlug,
@@ -1314,6 +1314,29 @@ class BookingController extends Controller
         }
 
         return max(0, min($discount, $subtotal));
+    }
+
+    private function requestQueryValue(Request $request, string $key): ?string
+    {
+        $value = trim((string) $request->query($key, ''));
+        if ($value !== '') {
+            return $value;
+        }
+
+        $requestUri = (string) $request->server('REQUEST_URI', '');
+        if ($requestUri === '') {
+            return null;
+        }
+
+        $query = parse_url($requestUri, PHP_URL_QUERY);
+        if (!is_string($query) || $query === '') {
+            return null;
+        }
+
+        parse_str($query, $params);
+        $fallback = trim((string) ($params[$key] ?? ''));
+
+        return $fallback !== '' ? $fallback : null;
     }
 
     private function bookingCurrency(?string $tenantCurrency = null): string
