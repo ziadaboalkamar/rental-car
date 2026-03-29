@@ -565,7 +565,14 @@ class RegisteredUserController extends Controller
 
     public function checkoutSuccess(Request $request): RedirectResponse
     {
-            abort(500, 'checkoutSuccess-hit');
+        \Log::info('checkoutSuccess entered', [
+    'full_url' => $request->fullUrl(),
+    'session_id_query' => $request->query('session_id'),
+    'expected_checkout_session_id' => $request->session()->get(self::CHECKOUT_SESSION_KEY),
+    'subscription_txn_id' => $request->session()->get(self::SUBSCRIPTION_TXN_SESSION_KEY),
+    'has_registration_session' => $request->session()->has(self::REGISTRATION_SESSION_KEY),
+    'has_plan_session' => $request->session()->has(self::PLAN_SELECTION_SESSION_KEY),
+]);
 
         if (TenantContext::id() && !$this->isExistingTenantPlanFlow($request)) {
             return $this->redirectToTenantRegister();
@@ -577,7 +584,12 @@ class RegisteredUserController extends Controller
 
         $expectedCheckoutSessionId = $request->session()->get(self::CHECKOUT_SESSION_KEY);
         if (!$expectedCheckoutSessionId || $request->string('session_id')->toString() !== $expectedCheckoutSessionId) {
-            return to_route($this->authRouteName('register.checkout'))->with('error', 'Invalid checkout session.');
+            \Log::warning('checkoutSuccess invalid session', [
+                    'query_session_id' => $request->string('session_id')->toString(),
+                    'expected_checkout_session_id' => $expectedCheckoutSessionId,
+                ]);
+
+        return to_route($this->authRouteName('register.checkout'))->with('error', 'Invalid checkout session.');
         }
 
         $stripeProvider = null;
@@ -782,6 +794,11 @@ class RegisteredUserController extends Controller
         $request->session()->regenerate();
 
         $destination = $user->role === UserRole::ADMIN ? 'admin.cars.index' : 'client.home';
+        \Log::info('checkoutSuccess final redirect', [
+            'tenant_slug' => $tenant->slug,
+            'destination' => $destination,
+            'redirect_url' => route($destination, ['subdomain' => $tenant->slug]),
+        ]);
 
         return redirect()->to(route($destination, ['subdomain' => $tenant->slug]))
             ->with('success', 'Registration completed successfully.');
