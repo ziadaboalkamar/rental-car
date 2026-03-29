@@ -573,6 +573,11 @@ class RegisteredUserController extends Controller
     'has_registration_session' => $request->session()->has(self::REGISTRATION_SESSION_KEY),
     'has_plan_session' => $request->session()->has(self::PLAN_SELECTION_SESSION_KEY),
 ]);
+\Log::info('checkoutSuccess server vars', [
+    'request_uri' => $request->server('REQUEST_URI'),
+    'query_string' => $request->server('QUERY_STRING'),
+]);
+
 
         if (TenantContext::id() && !$this->isExistingTenantPlanFlow($request)) {
             return $this->redirectToTenantRegister();
