@@ -34,7 +34,7 @@ class AppServiceProvider extends ServiceProvider
         Vite::useHotFile(storage_path('framework/vite.hot'));
 
         if ($this->app->environment('production')) {
-            URL::forceRootUrl(config('app.url'));
+            // URL::forceRootUrl(config('app.url'));
             URL::forceScheme('https');
         }
 
