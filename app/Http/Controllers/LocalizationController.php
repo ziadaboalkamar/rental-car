@@ -20,9 +20,40 @@ class LocalizationController extends Controller
 
         $redirect = (string) $request->query('redirect', '');
         if ($redirect !== '' && str_starts_with($redirect, '/')) {
-            return redirect()->to($redirect);
+            return redirect()->to($this->localizedRedirectPath($redirect, $locale, $supported));
         }
 
         return redirect()->back();
+    }
+
+    private function localizedRedirectPath(string $redirect, string $targetLocale, array $supportedLocales): string
+    {
+        $parts = parse_url($redirect);
+        $path = $parts['path'] ?? '/';
+        $query = isset($parts['query']) && $parts['query'] !== '' ? '?'.$parts['query'] : '';
+        $fragment = isset($parts['fragment']) && $parts['fragment'] !== '' ? '#'.$parts['fragment'] : '';
+
+        $escapedLocales = array_map(
+            static fn (string $locale): string => preg_quote($locale, '#'),
+            $supportedLocales,
+        );
+
+        $normalizedPath = preg_replace(
+            '#^/('.implode('|', $escapedLocales).')(?=/|$)#',
+            '',
+            $path,
+            1,
+        ) ?: $path;
+
+        $normalizedPath = '/'.ltrim($normalizedPath, '/');
+
+        $defaultLocale = config('app.locale', 'en');
+        $shouldHideLocale = (bool) config('laravellocalization.hideDefaultLocaleInURL', false);
+
+        if (!($shouldHideLocale && $targetLocale === $defaultLocale)) {
+            $normalizedPath = '/'.$targetLocale.($normalizedPath === '/' ? '' : $normalizedPath);
+        }
+
+        return $normalizedPath.$query.$fragment;
     }
 }

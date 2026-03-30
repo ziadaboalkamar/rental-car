@@ -25,14 +25,23 @@ withDefaults(
 const page = usePage<any>();
 const { locale, t } = useTrans();
 
-const localeSwitcherUrl = (targetLocale: string) =>
-    `/locale/${targetLocale}?redirect=${encodeURIComponent(page.url || '/')}`;
-
 const availableLocales = computed<string[]>(() =>
     Array.isArray(page.props?.available_locales) && page.props.available_locales.length
         ? page.props.available_locales
         : ['en']
 );
+
+const normalizedRedirectPath = computed(() => {
+    const currentPath = String(page.url || '/');
+    const escapedLocales = availableLocales.value.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const localeRegex = new RegExp(`^\\/(${escapedLocales.join('|')})(?=\\/|$)`);
+    const strippedPath = currentPath.replace(localeRegex, '') || '/';
+
+    return strippedPath.startsWith('/') ? strippedPath : `/${strippedPath}`;
+});
+
+const localeSwitcherUrl = (targetLocale: string) =>
+    `/locale/${targetLocale}?redirect=${encodeURIComponent(normalizedRedirectPath.value)}`;
 
 const nextLocale = computed(() => {
     const locales = availableLocales.value;

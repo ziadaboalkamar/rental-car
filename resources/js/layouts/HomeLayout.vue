@@ -19,8 +19,18 @@ const availableLocales = computed<string[]>(() =>
 );
 const isTenant = computed(() => !!currentTenant.value);
 const role = computed(() => $page.props.auth.user?.role);
+
+const normalizedRedirectPath = computed(() => {
+    const currentPath = String($page.url || '/');
+    const escapedLocales = availableLocales.value.map((item) => item.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const localeRegex = new RegExp(`^\\/(${escapedLocales.join('|')})(?=\\/|$)`);
+    const strippedPath = currentPath.replace(localeRegex, '') || '/';
+
+    return strippedPath.startsWith('/') ? strippedPath : `/${strippedPath}`;
+});
+
 const localeSwitcherUrl = (targetLocale: string) =>
-    `/locale/${targetLocale}?redirect=${encodeURIComponent($page.url || '/')}`;
+    `/locale/${targetLocale}?redirect=${encodeURIComponent(normalizedRedirectPath.value)}`;
 
 const routeHelpers = computed(() => {
     if (isTenant.value) {
