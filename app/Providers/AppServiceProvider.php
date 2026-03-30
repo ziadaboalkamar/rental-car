@@ -32,9 +32,9 @@ class AppServiceProvider extends ServiceProvider
     {
         // Avoid stale/locked public/hot forcing broken dev-server URLs in production-like runs.
         Vite::useHotFile(storage_path('framework/vite.hot'));
+        Vite::createAssetPathsUsing(static fn (string $path) => '/'.ltrim($path, '/'));
 
         if ($this->app->environment('production')) {
-            // URL::forceRootUrl(config('app.url'));
             URL::forceScheme('https');
         }
 
