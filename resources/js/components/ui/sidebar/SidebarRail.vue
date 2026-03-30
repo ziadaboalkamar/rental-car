@@ -10,7 +10,7 @@ const props = defineProps<{
 
 const { toggleSidebar } = useSidebar()
 const page = usePage<{ direction?: string; locale?: string }>()
-const isRtl = computed(() => page.props.direction === 'rtl' || page.props.locale === 'ar')
+const isRtl = computed(() => page.props.direction === 'rtl')
 </script>
 
 <template>

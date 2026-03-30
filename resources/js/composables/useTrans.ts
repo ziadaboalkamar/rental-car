@@ -23,7 +23,7 @@ export function useTrans() {
     const page = usePage<any>();
 
     const locale = computed(() => page.props.locale ?? 'en');
-    const direction = computed(() => page.props.direction ?? (locale.value === 'ar' ? 'rtl' : 'ltr'));
+    const direction = computed(() => page.props.direction ?? 'ltr');
     const translations = computed<TranslationDictionary>(() => page.props.translations ?? {});
 
     const t = (key: string, params: Record<string, string | number> = {}): string => {

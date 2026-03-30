@@ -27,6 +27,8 @@ class LocalizationSettingsController extends Controller
 
     public function update(Request $request): RedirectResponse
     {
+        $currentLocale = (string) app()->getLocale();
+
         $validated = $request->validate([
             'default_locale' => ['required', 'string', 'max:10'],
             'locales' => ['required', 'array', 'min:1'],
@@ -48,6 +50,36 @@ class LocalizationSettingsController extends Controller
             ['value' => $normalized]
         );
 
-        return back()->with('success', 'Language settings updated successfully.');
+        $request->session()->put('locale', $currentLocale);
+
+        return redirect()
+            ->to($this->localizedCurrentPath($request, $currentLocale, $normalized['default_locale'], LocalizationSettings::localeCodes($normalized)))
+            ->with('success', 'Language settings updated successfully.');
+    }
+
+    private function localizedCurrentPath(Request $request, string $currentLocale, string $defaultLocale, array $supportedLocales): string
+    {
+        $path = '/'.ltrim($request->path(), '/');
+        $query = $request->getQueryString();
+
+        $escapedLocales = array_map(
+            static fn (string $locale): string => preg_quote($locale, '#'),
+            $supportedLocales,
+        );
+
+        $normalizedPath = preg_replace(
+            '#^/('.implode('|', $escapedLocales).')(?=/|$)#',
+            '',
+            $path,
+            1,
+        ) ?: $path;
+
+        $normalizedPath = '/'.ltrim($normalizedPath, '/');
+
+        if ($currentLocale !== $defaultLocale) {
+            $normalizedPath = '/'.$currentLocale.($normalizedPath === '/' ? '' : $normalizedPath);
+        }
+
+        return $query ? $normalizedPath.'?'.$query : $normalizedPath;
     }
 }

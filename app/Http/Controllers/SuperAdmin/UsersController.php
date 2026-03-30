@@ -115,7 +115,7 @@ class UsersController
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $user->id,
-            'password' => 'nullable|confirmed|min:8',
+            'password' => ['nullable', 'confirmed', Rules\Password::defaults()],
             'role_ids' => 'array',
             'role_ids.*' => 'exists:roles,id',
         ]);

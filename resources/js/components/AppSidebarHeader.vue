@@ -1,16 +1,18 @@
 <script setup lang="ts">
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
+import UserMenuContent from '@/components/UserMenuContent.vue';
 import { useTrans } from '@/composables/useTrans';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
     DropdownMenuContent,
+    DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { BreadcrumbItemType } from '@/types';
 import { usePage } from '@inertiajs/vue3';
-import { Bell, Languages } from 'lucide-vue-next';
+import { Bell, ChevronDown, Languages, UserIcon } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 
 withDefaults(
@@ -23,13 +25,18 @@ withDefaults(
 );
 
 const page = usePage<any>();
-const { locale, t } = useTrans();
+const { locale, direction, t } = useTrans();
+const currentUser = computed(() => page.props?.auth?.user ?? null);
 
 const availableLocales = computed<string[]>(() =>
     Array.isArray(page.props?.available_locales) && page.props.available_locales.length
         ? page.props.available_locales
         : ['en']
 );
+
+const isRtl = computed(() => direction.value === 'rtl');
+const notificationsAlign = computed<'start' | 'end'>(() => (isRtl.value ? 'start' : 'end'));
+const showLocaleDropdown = computed(() => availableLocales.value.length > 2);
 
 const normalizedRedirectPath = computed(() => {
     const currentPath = String(page.url || '/');
@@ -160,20 +167,23 @@ async function markAllAsRead() {
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
         </div>
-        <div class="ml-auto flex items-center gap-2">
+        <div :class="[isRtl ? 'mr-auto' : 'ml-auto', 'flex items-center gap-2']">
             <DropdownMenu>
                 <DropdownMenuTrigger as-child>
                     <Button variant="ghost" size="icon" class="relative h-8 w-8">
                         <Bell class="h-4 w-4" />
                         <span
                             v-if="unreadCount > 0"
-                            class="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white"
+                            :class="[
+                                'absolute -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white',
+                                isRtl ? '-left-1' : '-right-1',
+                            ]"
                         >
                             {{ unreadCount > 99 ? '99+' : unreadCount }}
                         </span>
                     </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" class="w-96 p-0">
+                <DropdownMenuContent :align="notificationsAlign" class="w-96 p-0">
                     <div class="flex items-center justify-between border-b px-3 py-2">
                         <p class="text-sm font-semibold">Notifications</p>
                         <Button
@@ -230,8 +240,37 @@ async function markAllAsRead() {
                 </DropdownMenuContent>
             </DropdownMenu>
 
+            <DropdownMenu v-if="showLocaleDropdown">
+                <DropdownMenuTrigger as-child>
+                    <Button
+                        variant="ghost"
+                        class="h-8 gap-1 rounded-md border border-sidebar-border/70 px-2 text-xs font-semibold text-muted-foreground hover:text-foreground"
+                    >
+                        <Languages class="h-4 w-4" />
+                        <span class="hidden sm:inline">{{ String(locale || '').toUpperCase() }}</span>
+                        <ChevronDown class="hidden h-3.5 w-3.5 sm:inline" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent :align="notificationsAlign" class="min-w-40">
+                    <DropdownMenuItem v-for="localeCode in availableLocales" :key="localeCode" as-child>
+                        <a
+                            :href="localeSwitcherUrl(localeCode)"
+                            class="flex w-full items-center justify-between gap-2"
+                        >
+                            <span>{{ localeCode.toUpperCase() }}</span>
+                            <span
+                                v-if="locale === localeCode"
+                                class="text-[11px] font-semibold text-primary"
+                            >
+                                {{ t('language.label') }}
+                            </span>
+                        </a>
+                    </DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
+
             <a
-                v-if="availableLocales.length > 1"
+                v-else-if="availableLocales.length > 1"
                 :href="localeSwitcherUrl(nextLocale)"
                 :title="t('language.label')"
                 class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-sidebar-border/70 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:hidden"
@@ -240,7 +279,7 @@ async function markAllAsRead() {
             </a>
 
             <div
-                v-if="availableLocales.length > 0"
+                v-else-if="availableLocales.length > 0"
                 class="hidden items-center gap-1 rounded-md border border-sidebar-border/70 px-2 py-1 sm:flex"
             >
                 <Languages class="h-4 w-4 text-muted-foreground" />
@@ -258,6 +297,17 @@ async function markAllAsRead() {
                     {{ localeCode.toUpperCase() }}
                 </a>
             </div>
+
+            <DropdownMenu v-if="currentUser">
+                <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon" class="h-8 w-8 rounded-full border border-sidebar-border/70">
+                        <UserIcon class="h-4 w-4" />
+                    </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent :align="notificationsAlign" class="min-w-56 rounded-lg p-1" :side-offset="4">
+                    <UserMenuContent :user="currentUser" />
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
     </header>
 </template>

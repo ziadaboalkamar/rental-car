@@ -54,9 +54,7 @@ const availableLocales = computed<string[]>(() =>
         ? page.props.available_locales
         : ['en'],
 );
-const isRtl = computed(
-    () => page.props.direction === 'rtl' || page.props.locale === 'ar',
-);
+const isRtl = computed(() => page.props.direction === 'rtl');
 const stripLocalePrefix = (path: string) => {
     const escapedLocales = availableLocales.value.map((locale: string) =>
         locale.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),

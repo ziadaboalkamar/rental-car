@@ -12,7 +12,7 @@ const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 const syncDocumentLocale = (props: any) => {
     const locale = props?.locale || 'en';
-    const direction = props?.direction || (locale === 'ar' ? 'rtl' : 'ltr');
+    const direction = props?.direction || 'ltr';
 
     document.documentElement.lang = locale;
     document.documentElement.dir = direction;

@@ -28,6 +28,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(function (\Illuminate\Http\Request $request): string {
             $host = strtolower($request->getHost());
             $baseHost = strtolower((string) parse_url(config('app.url'), PHP_URL_HOST));
+            $pathSegments = array_values(array_filter(explode('/', trim($request->path(), '/'))));
+            $availableLocales = config('app.available_locales', [config('app.locale', 'en')]);
+
+            if (!empty($pathSegments) && in_array($pathSegments[0], $availableLocales, true)) {
+                array_shift($pathSegments);
+            }
+
+            if (($pathSegments[0] ?? null) === 'superadmin') {
+                return route('superadmin.login');
+            }
 
             if ($baseHost !== '' && str_ends_with($host, '.'.$baseHost)) {
                 return route('tenant-login');

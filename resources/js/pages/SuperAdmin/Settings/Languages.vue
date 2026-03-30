@@ -54,11 +54,11 @@ const form = useForm({
 const selectedPresetCode = ref(languagePresets[0]?.code || 'en');
 
 const existingLocaleCodes = computed(() =>
-    form.locales.map((item) => String(item.code || '').toLowerCase())
+    form.locales.map((item) => String(item.code || '').toLowerCase()),
 );
 
 const selectedPreset = computed(() =>
-    languagePresets.find((item) => item.code === selectedPresetCode.value) || null
+    languagePresets.find((item) => item.code === selectedPresetCode.value) || null,
 );
 
 const canInsertSelectedPreset = computed(() => {
@@ -112,6 +112,13 @@ function submit() {
     if (!form.default_locale && form.locales.length > 0) {
         form.default_locale = form.locales[0].code || 'en';
     }
+
+    form.locales = form.locales.map((locale) => ({
+        ...locale,
+        native: locale.native || locale.name || locale.code || '',
+        regional: locale.regional || '',
+        script: locale.script || '',
+    }));
 
     form.put(props.actions.update, {
         preserveScroll: true,
@@ -212,26 +219,6 @@ function submit() {
                                 <p v-if="form.errors[`locales.${index}.name`]" class="text-xs text-red-600">
                                     {{ form.errors[`locales.${index}.name`] }}
                                 </p>
-                            </div>
-
-                            <div class="space-y-1">
-                                <Label :for="`locale-native-${index}`">Native</Label>
-                                <Input :id="`locale-native-${index}`" v-model="locale.native" placeholder="English / العربية" />
-                                <p v-if="form.errors[`locales.${index}.native`]" class="text-xs text-red-600">
-                                    {{ form.errors[`locales.${index}.native`] }}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
-                            <div class="space-y-1">
-                                <Label :for="`locale-regional-${index}`">Regional</Label>
-                                <Input :id="`locale-regional-${index}`" v-model="locale.regional" placeholder="en_US" />
-                            </div>
-
-                            <div class="space-y-1">
-                                <Label :for="`locale-script-${index}`">Script</Label>
-                                <Input :id="`locale-script-${index}`" v-model="locale.script" placeholder="Latn / Arab" />
                             </div>
 
                             <div class="space-y-1">

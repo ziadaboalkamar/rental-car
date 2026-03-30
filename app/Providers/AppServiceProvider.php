@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Validation\Rules\Password;
 use Throwable;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,6 +31,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Password::defaults(static fn () => Password::min(8)->mixedCase()->numbers());
+
         // Avoid stale/locked public/hot forcing broken dev-server URLs in production-like runs.
         Vite::useHotFile(storage_path('framework/vite.hot'));
         Vite::createAssetPathsUsing(static fn (string $path) => '/'.ltrim($path, '/'));
