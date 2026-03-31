@@ -131,11 +131,9 @@ class AuthenticatedSessionController extends Controller
             ])->onlyInput('email');
         }
 
-        $destination = $user->role === UserRole::ADMIN ? 'admin.cars.index' : 'client.home';
-
         return $this->locationOrRedirect(
             $request,
-            route($destination, ['subdomain' => $tenantSlug])
+            $this->postAuthenticationUrl($user, $tenantSlug)
         );
     }
 
@@ -207,7 +205,7 @@ class AuthenticatedSessionController extends Controller
 
         return $this->locationOrRedirect(
             $request,
-            route('admin.cars.index', ['subdomain' => $tenantSlug])
+            $this->postAuthenticationUrl($user, $tenantSlug)
         );
     }
 
@@ -282,6 +280,35 @@ class AuthenticatedSessionController extends Controller
         }
 
         return redirect()->to($url);
+    }
+
+    private function postAuthenticationUrl(object $user, ?string $tenantSlug = null): string
+    {
+        if ($this->requiresTenantEmailVerification($user) && method_exists($user, 'hasVerifiedEmail') && !$user->hasVerifiedEmail()) {
+            return $tenantSlug
+                ? route('tenant.verification.notice', ['subdomain' => $tenantSlug])
+                : route('verification.notice');
+        }
+
+        if (($user->role ?? null) === UserRole::ADMIN && $tenantSlug) {
+            return route('admin.cars.index', ['subdomain' => $tenantSlug]);
+        }
+
+        if (($user->role ?? null) === UserRole::CLIENT && $tenantSlug) {
+            return route('client.home', ['subdomain' => $tenantSlug]);
+        }
+
+        if (($user->role ?? null) === UserRole::SUPER_ADMIN) {
+            return route('superadmin.dashboard');
+        }
+
+        return route('dashboard');
+    }
+
+    private function requiresTenantEmailVerification(object $user): bool
+    {
+        return !empty($user->tenant_id)
+            && in_array($user->role ?? null, [UserRole::ADMIN, UserRole::CLIENT], true);
     }
 
     private function ensureTenantAdminFullAccess(object $user, ?Tenant $tenant = null): void

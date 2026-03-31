@@ -4,7 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Client\ReservationsController;
 use App\Http\Controllers\Client\SupportController;
 
-Route::middleware(['auth', 'verified', 'active', 'client', 'tenant.subscription'])
+Route::middleware(['auth', 'tenant_verified', 'active', 'client', 'tenant.subscription'])
     ->prefix('client')
     ->as('client.')
     ->group(function () {

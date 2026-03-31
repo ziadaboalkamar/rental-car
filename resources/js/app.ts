@@ -8,14 +8,16 @@ import { initializeTheme } from './composables/useAppearance';
 
 import { setUrlDefaults } from './wayfinder';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+let appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
 const syncDocumentLocale = (props: any) => {
     const locale = props?.locale || 'en';
     const direction = props?.direction || 'ltr';
+    const currentAppName = props?.name || import.meta.env.VITE_APP_NAME || 'Laravel';
 
     document.documentElement.lang = locale;
     document.documentElement.dir = direction;
+    appName = currentAppName;
 };
 
 createInertiaApp({

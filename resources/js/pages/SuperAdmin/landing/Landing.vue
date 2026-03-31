@@ -2,7 +2,7 @@
 import { Button } from '@/components/ui/button';
 import { useTrans } from '@/composables/useTrans';
 import { register as mainRegister } from '@/routes';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { Check, ChevronDown, Menu, X } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import heroMockup from '@/assets/hero-mockup.png';
@@ -67,7 +67,9 @@ const props = defineProps<{
     }>;
 }>();
 
+const page = usePage<any>();
 const { t } = useTrans();
+const appName = computed(() => page.props.name || 'Real Rent Car');
 
 const navLinks = [
     { label: 'Features', href: '#features' },
@@ -143,7 +145,7 @@ onUnmounted(() => {
             "
         >
             <div class="section-container flex h-16 items-center justify-between">
-                <a href="#" class="text-xl font-bold tracking-tight text-foreground">Streamline</a>
+                <a href="#" class="text-xl font-bold tracking-tight text-foreground">{{ appName }}</a>
 
                 <div class="hidden items-center gap-8 md:flex">
                     <a
@@ -389,7 +391,7 @@ onUnmounted(() => {
             <div class="section-container text-center">
                 <h3 class="text-2xl font-bold text-foreground">{{ landingSettings.footer.title }}</h3>
                 <p class="mx-auto mt-3 max-w-2xl text-muted-foreground">{{ landingSettings.footer.description }}</p>
-                <p class="mt-6 text-sm text-muted-foreground">&copy; {{ currentYear }} Streamline. {{ t('landing.footer_rights') }}</p>
+                <p class="mt-6 text-sm text-muted-foreground">&copy; {{ currentYear }} {{ appName }}. {{ t('landing.footer_rights') }}</p>
             </div>
         </footer>
     </div>

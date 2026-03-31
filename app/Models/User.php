@@ -2,9 +2,10 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Notifications\TenantAwareVerifyEmailNotification;
 use App\Enums\UserRole;
 use App\Traits\BelongsToTenant;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -14,7 +15,7 @@ use Laratrust\Contracts\LaratrustUser;
 use Laratrust\Traits\HasRolesAndPermissions;
 
 
-class User extends Authenticatable implements LaratrustUser
+class User extends Authenticatable implements LaratrustUser, MustVerifyEmail
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use HasFactory, Notifiable, TwoFactorAuthenticatable, BelongsToTenant, HasRolesAndPermissions;
@@ -106,5 +107,16 @@ class User extends Authenticatable implements LaratrustUser
     public function messages()
     {
         return $this->hasMany(Message::class);
+    }
+
+    public function sendEmailVerificationNotification(): void
+    {
+        $this->notify(new TenantAwareVerifyEmailNotification());
+    }
+
+    public function requiresTenantEmailVerification(): bool
+    {
+        return !empty($this->tenant_id)
+            && in_array($this->role, [UserRole::ADMIN, UserRole::CLIENT], true);
     }
 }

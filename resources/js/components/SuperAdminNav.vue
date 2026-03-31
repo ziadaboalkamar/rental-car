@@ -31,6 +31,8 @@ import {
     CalendarDays,
     Cog,
     LifeBuoy,
+    Palette,
+    Mail,
 } from 'lucide-vue-next';
 
 import { type NavItem } from '@/types';
@@ -123,9 +125,12 @@ const superAdminNav = computed<NavItem[]>(() => [
         permission: 'manage-settings',
         children: [
             { title: t('dashboard.sidebar.super_admin.general_settings'), href: '/superadmin/settings/general', icon: Cog },
+            { title: 'Branding', href: '/superadmin/settings/branding', icon: Cog },
+            { title: 'Design', href: '/superadmin/settings/design', icon: Palette },
             { title: 'Login Settings', href: '/superadmin/settings/login', icon: Shield },
             { title: 'Payment Providers', href: '/superadmin/settings/payment-providers', icon: CreditCard },
             { title: 'Languages', href: '/superadmin/settings/languages', icon: Cog },
+            { title: 'Emails', href: '/superadmin/settings/emails', icon: Mail },
         ],
     },
 ]);

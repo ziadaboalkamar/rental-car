@@ -1,0 +1,57 @@
+<?php
+
+namespace App\Core;
+
+use App\Models\SiteSetting;
+
+class AppBrandingSettings
+{
+    public const KEY = 'app_branding';
+
+    public static function defaults(): array
+    {
+        return [
+            'app_name' => config('app.name', 'Real Rent Car'),
+            'logo_url' => null,
+        ];
+    }
+
+    public static function load(): array
+    {
+        $setting = SiteSetting::query()
+            ->with('files')
+            ->where('key', self::KEY)
+            ->first();
+
+        return self::normalize($setting);
+    }
+
+    public static function normalize(SiteSetting|array|null $source): array
+    {
+        $defaults = self::defaults();
+        $data = $source instanceof SiteSetting ? ($source->value ?? []) : $source;
+        $logoUrl = null;
+
+        if ($source instanceof SiteSetting) {
+            $file = $source->relationLoaded('files')
+                ? $source->files->firstWhere('collection', 'logo')
+                : $source->files()->where('collection', 'logo')->first();
+
+            if ($file && $file->path) {
+                $logoUrl = SiteSetting::publicUrlFromPath($file->path);
+            }
+        }
+
+        return [
+            'app_name' => trim((string) ($data['app_name'] ?? $defaults['app_name'])) ?: $defaults['app_name'],
+            'logo_url' => self::nullableString($logoUrl ?: ($data['logo_url'] ?? $defaults['logo_url'])),
+        ];
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        $normalized = trim((string) $value);
+
+        return $normalized !== '' ? $normalized : null;
+    }
+}

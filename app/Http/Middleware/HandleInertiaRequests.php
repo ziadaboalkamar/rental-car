@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Core\AppBrandingSettings;
 use App\Models\TenantSiteSetting;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
@@ -39,10 +40,12 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         [$message, $author] = str(Inspiring::quotes()->random())->explode('-');
+        $appBranding = AppBrandingSettings::load();
 
         return [
             ...parent::share($request),
-            'name' => config('app.name'),
+            'name' => $appBranding['app_name'] ?? config('app.name'),
+            'app_branding' => $appBranding,
             'quote' => ['message' => trim($message), 'author' => trim($author)],
             'locale' => app()->getLocale(),
             'direction' => LaravelLocalization::getCurrentLocaleDirection(),

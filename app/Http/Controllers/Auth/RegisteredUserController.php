@@ -95,10 +95,10 @@ class RegisteredUserController extends Controller
             event(new Registered($user));
 
             Auth::login($user);
+            $request->session()->regenerate();
 
-            $destination = $user->role === UserRole::ADMIN ? 'admin.home' : 'client.home';
-
-            return to_route($destination, ['subdomain' => $tenantSlug]);
+            return redirect()->to($this->postAuthenticationUrl($user, $tenantSlug))
+                ->with('success', 'Your account has been created. Please verify your email to continue.');
         }
 
         $validated = $request->validate([
@@ -749,7 +749,6 @@ class RegisteredUserController extends Controller
                     'tenant_id' => $tenant->id,
                     'is_active' => true,
                     'trial_ends_at' => $accessEndsAt,
-                    'email_verified_at' => now(),
                 ]);
 
                 return [$tenant, $user];
@@ -780,15 +779,8 @@ class RegisteredUserController extends Controller
         Auth::login($user, true);
         $request->session()->regenerate();
 
-        $destination = $user->role === UserRole::ADMIN ? 'admin.cars.index' : 'client.home';
-        \Log::info('checkoutSuccess final redirect', [
-            'tenant_slug' => $tenant->slug,
-            'destination' => $destination,
-            'redirect_url' => route($destination, ['subdomain' => $tenant->slug]),
-        ]);
-
-        return redirect()->to(route($destination, ['subdomain' => $tenant->slug]))
-            ->with('success', 'Registration completed successfully.');
+        return redirect()->to($this->postAuthenticationUrl($user, $tenant->slug))
+            ->with('success', 'Payment completed successfully. Please verify your email to activate your account.');
     }
 
     public function checkoutCancel(Request $request): RedirectResponse
@@ -1380,7 +1372,6 @@ class RegisteredUserController extends Controller
                     'tenant_id' => $tenant->id,
                     'is_active' => true,
                     'trial_ends_at' => $accessEndsAt,
-                    'email_verified_at' => now(),
                 ]);
 
                 $transaction->update([
@@ -1424,10 +1415,8 @@ class RegisteredUserController extends Controller
         Auth::login($user, true);
         $request->session()->regenerate();
 
-        $destination = $user->role === UserRole::ADMIN ? 'admin.cars.index' : 'client.home';
-
-        return redirect()->to(route($destination, ['subdomain' => $tenant->slug]))
-            ->with('success', 'Registration completed successfully.');
+        return redirect()->to($this->postAuthenticationUrl($user, $tenant->slug))
+            ->with('success', 'Payment completed successfully. Please verify your email to activate your account.');
     }
 
     private function persistProviderSubscriptionRecord(
@@ -1848,6 +1837,36 @@ class RegisteredUserController extends Controller
         $fallback = trim((string) ($params[$key] ?? ''));
 
         return $fallback !== '' ? $fallback : null;
+    }
+
+    private function postAuthenticationUrl(User $user, ?string $tenantSlug = null): string
+    {
+        if ($user->requiresTenantEmailVerification() && !$user->hasVerifiedEmail()) {
+            return $this->verificationNoticeUrl($tenantSlug);
+        }
+
+        if ($user->role === UserRole::SUPER_ADMIN) {
+            return route('superadmin.dashboard');
+        }
+
+        if ($user->role === UserRole::ADMIN && $tenantSlug) {
+            return route('admin.cars.index', ['subdomain' => $tenantSlug]);
+        }
+
+        if ($user->role === UserRole::CLIENT && $tenantSlug) {
+            return route('client.home', ['subdomain' => $tenantSlug]);
+        }
+
+        return route('dashboard');
+    }
+
+    private function verificationNoticeUrl(?string $tenantSlug = null): string
+    {
+        if ($tenantSlug) {
+            return route('tenant.verification.notice', ['subdomain' => $tenantSlug]);
+        }
+
+        return route('verification.notice');
     }
 
     private function ensureTenantAdminFullAccess(User $user, ?Tenant $tenant = null): void

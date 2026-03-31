@@ -12,10 +12,12 @@ use App\Http\Controllers\SuperAdmin\CarsController;
 use App\Http\Controllers\SuperAdmin\ReservationsController;
 use App\Http\Controllers\SuperAdmin\LandingSettingsController;
 use App\Http\Controllers\SuperAdmin\LoginSettingsController;
+use App\Http\Controllers\SuperAdmin\AppBrandingSettingsController;
 use App\Http\Controllers\SuperAdmin\RevenueSubscriptionController;
 use App\Http\Controllers\SuperAdmin\RevenueTransactionsController;
 use App\Http\Controllers\SuperAdmin\PaymentProvidersController;
 use App\Http\Controllers\SuperAdmin\LocalizationSettingsController;
+use App\Http\Controllers\SuperAdmin\EmailTemplateSettingsController;
 use App\Http\Controllers\SuperAdmin\SupportController as SuperAdminSupportController;
 
 use App\Http\Controllers\SuperAdmin\Auth\LoginController;
@@ -27,7 +29,7 @@ Route::middleware('guest')->group(function () {
     Route::post('superadmin/login', [LoginController::class, 'store']);
 });
 
-Route::middleware(['auth', 'verified', 'active', 'super_admin'])
+Route::middleware(['auth', 'active', 'super_admin'])
     ->prefix('superadmin')
     ->as('superadmin.')
     ->group(function () {
@@ -91,6 +93,10 @@ Route::middleware(['auth', 'verified', 'active', 'super_admin'])
             Route::get('settings/general', [LandingSettingsController::class, 'edit'])->name('settings.general');
             Route::put('settings/general', [LandingSettingsController::class, 'update'])->name('settings.general.update');
             Route::post('settings/general/test-ai-connection', [LandingSettingsController::class, 'testAiConnection'])->name('settings.general.test-ai-connection');
+            Route::get('settings/branding', [AppBrandingSettingsController::class, 'edit'])->name('settings.branding');
+            Route::put('settings/branding', [AppBrandingSettingsController::class, 'update'])->name('settings.branding.update');
+            Route::get('settings/design', [LandingSettingsController::class, 'design'])->name('settings.design');
+            Route::put('settings/design', [LandingSettingsController::class, 'updateDesign'])->name('settings.design.update');
             
             Route::get('settings/login', [LoginSettingsController::class, 'edit'])->name('settings.login');
             Route::put('settings/login', [LoginSettingsController::class, 'update'])->name('settings.login.update');
@@ -105,5 +111,7 @@ Route::middleware(['auth', 'verified', 'active', 'super_admin'])
             Route::put('settings/payment-providers/{paymentProvider}', [PaymentProvidersController::class, 'update'])->name('settings.payment-providers.update');
             Route::get('settings/languages', [LocalizationSettingsController::class, 'edit'])->name('settings.languages');
             Route::put('settings/languages', [LocalizationSettingsController::class, 'update'])->name('settings.languages.update');
+            Route::get('settings/emails', [EmailTemplateSettingsController::class, 'edit'])->name('settings.emails');
+            Route::put('settings/emails', [EmailTemplateSettingsController::class, 'update'])->name('settings.emails.update');
         });
     });

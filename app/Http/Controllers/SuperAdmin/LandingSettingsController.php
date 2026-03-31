@@ -23,14 +23,18 @@ class LandingSettingsController extends Controller
 {
     public function edit(): Response
     {
-        $stored = SiteSetting::query()
-            ->where('key', LandingPageSettings::KEY)
-            ->value('value');
-
         return Inertia::render('SuperAdmin/Settings/General', [
-            'settings' => LandingPageSettings::normalize(is_array($stored) ? $stored : null),
+            'settings' => $this->landingSettings(),
             'aiSettings' => AiAutomationSettings::load(),
             'aiProviderSettings' => AiProviderSettings::forUi(),
+        ]);
+    }
+
+    public function design(): Response
+    {
+        return Inertia::render('SuperAdmin/Settings/Design', [
+            'settings' => $this->landingSettings(),
+            'previewUrl' => route('home'),
         ]);
     }
 
@@ -88,16 +92,13 @@ class LandingSettingsController extends Controller
             'ai_provider.google_document_ai.processor_id' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $normalized = LandingPageSettings::normalize($validated['settings'] ?? []);
+        $normalized = $this->validatedLandingSettings($request);
         $normalizedAi = AiAutomationSettings::normalize($validated['ai'] ?? []);
         $currentAiProvider = AiProviderSettings::load();
         $normalizedAiProvider = AiProviderSettings::normalize($validated['ai_provider'] ?? []);
         $normalizedAiProvider = AiProviderSettings::mergeSecrets($currentAiProvider, $normalizedAiProvider);
 
-        SiteSetting::query()->updateOrCreate(
-            ['key' => LandingPageSettings::KEY],
-            ['value' => $normalized]
-        );
+        $this->persistLandingSettings($normalized);
 
         SiteSetting::query()->updateOrCreate(
             ['key' => AiAutomationSettings::KEY],
@@ -110,6 +111,13 @@ class LandingSettingsController extends Controller
         );
 
         return back()->with('success', 'Landing page settings updated successfully.');
+    }
+
+    public function updateDesign(Request $request): RedirectResponse
+    {
+        $this->persistLandingSettings($this->validatedLandingSettings($request));
+
+        return back()->with('success', 'Landing page design updated successfully.');
     }
 
     public function testAiConnection(Request $request): JsonResponse
@@ -225,5 +233,60 @@ class LandingSettingsController extends Controller
         $request = (new GetProcessorRequest())->setName($processorName);
         $client->getProcessor($request);
         $client->close();
+    }
+
+    private function landingSettings(): array
+    {
+        $stored = SiteSetting::query()
+            ->where('key', LandingPageSettings::KEY)
+            ->value('value');
+
+        return LandingPageSettings::normalize(is_array($stored) ? $stored : null);
+    }
+
+    private function persistLandingSettings(array $settings): void
+    {
+        SiteSetting::query()->updateOrCreate(
+            ['key' => LandingPageSettings::KEY],
+            ['value' => $settings]
+        );
+    }
+
+    private function validatedLandingSettings(Request $request): array
+    {
+        $validated = $request->validate([
+            'settings.hero.title' => ['required', 'string', 'max:255'],
+            'settings.hero.description' => ['required', 'string', 'max:2000'],
+            'settings.hero.features' => ['nullable', 'array'],
+            'settings.hero.features.*' => ['nullable', 'string', 'max:255'],
+            'settings.hero.image_url' => ['nullable', 'string', 'max:2000'],
+
+            'settings.features_section.title' => ['required', 'string', 'max:255'],
+            'settings.features_section.description' => ['required', 'string', 'max:2000'],
+            'settings.features_section.cards' => ['nullable', 'array'],
+            'settings.features_section.cards.*.title' => ['nullable', 'string', 'max:255'],
+            'settings.features_section.cards.*.image_url' => ['nullable', 'string', 'max:2000'],
+            'settings.features_section.cards.*.content' => ['nullable', 'string', 'max:2000'],
+
+            'settings.getting_started.title' => ['required', 'string', 'max:255'],
+            'settings.getting_started.description' => ['required', 'string', 'max:2000'],
+            'settings.getting_started.items' => ['nullable', 'array'],
+            'settings.getting_started.items.*.title' => ['nullable', 'string', 'max:255'],
+            'settings.getting_started.items.*.description' => ['nullable', 'string', 'max:2000'],
+
+            'settings.plans_section.title' => ['required', 'string', 'max:255'],
+            'settings.plans_section.description' => ['required', 'string', 'max:2000'],
+
+            'settings.faq_section.title' => ['required', 'string', 'max:255'],
+            'settings.faq_section.description' => ['required', 'string', 'max:2000'],
+            'settings.faq_section.items' => ['nullable', 'array'],
+            'settings.faq_section.items.*.question' => ['nullable', 'string', 'max:2000'],
+            'settings.faq_section.items.*.answer' => ['nullable', 'string', 'max:5000'],
+
+            'settings.footer.title' => ['required', 'string', 'max:255'],
+            'settings.footer.description' => ['required', 'string', 'max:2000'],
+        ]);
+
+        return LandingPageSettings::normalize($validated['settings'] ?? []);
     }
 }

@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Notifications\TenantAdminInvitationNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -81,19 +82,20 @@ class TenantsController
 
         $tenant = Tenant::create($tenantData);
 
-        User::withoutGlobalScope('tenant')->create([
+        $adminUser = User::withoutGlobalScope('tenant')->create([
             'name' => $validated['admin_name'],
             'email' => $validated['admin_email'],
             'password' => Hash::make($validated['admin_password']),
             'role' => UserRole::ADMIN,
             'tenant_id' => $tenant->id,
             'is_active' => true,
-            'email_verified_at' => now(),
         ]);
+
+        $adminUser->notify(new TenantAdminInvitationNotification($tenant));
 
         return redirect()
             ->route('superadmin.tenants.show', $tenant)
-            ->with('success', 'Tenant and admin user created.');
+            ->with('success', 'Tenant created and the admin activation email has been sent.');
     }
 
     /**

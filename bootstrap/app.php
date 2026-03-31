@@ -66,6 +66,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\AdminMiddleware::class,
             'client' => \App\Http\Middleware\ClientMiddleware::class,
             'active' => \App\Http\Middleware\CheckUserActive::class,
+            'tenant_verified' => \App\Http\Middleware\EnsureTenantEmailIsVerified::class,
             'tenant.subscription' => \App\Http\Middleware\EnsureTenantSubscriptionIsActive::class,
             'restricted' => \App\Http\Middleware\restricted::class,
             'can_manage_roles' => \App\Http\Middleware\CanManageRoles::class,

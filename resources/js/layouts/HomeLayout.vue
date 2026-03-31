@@ -62,7 +62,8 @@ const getUrl = (helper: any) => {
 };
 
 const tenantBranding = computed(() => tenantSiteSettings.value ?? null);
-const siteName = computed(() => tenantBranding.value?.site_name || currentTenant.value?.name || 'Real Rent Car');
+const appName = computed(() => $page.props.name || 'Real Rent Car');
+const siteName = computed(() => tenantBranding.value?.site_name || currentTenant.value?.name || appName.value);
 const siteLogoUrl = computed(() => tenantBranding.value?.logo_url || null);
 const primaryColor = computed(() => tenantBranding.value?.primary_color || '#f97316');
 const secondaryColor = computed(() => tenantBranding.value?.secondary_color || '#ea580c');
@@ -89,7 +90,7 @@ const themeVars = computed(() => ({
                                 <span class="truncate max-w-[180px] inline-block align-bottom">{{ siteName }}</span>
                             </template>
                             <template v-else>
-                                REAL<span :style="{ color: 'var(--tenant-primary)' }">RENT</span>CAR
+                                {{ appName }}
                             </template>
                         </p>
                     </div>
@@ -354,7 +355,7 @@ const themeVars = computed(() => ({
                 <div class="mt-2 border-t border-gray-800 pt-8">
                    
                         <p class="text-gray-400 text-center">
-                            &copy; 2025 RealRent. {{ t('footer.rights') }}
+                            &copy; {{ new Date().getFullYear() }} {{ siteName }}. {{ t('footer.rights') }}
                         </p>
                        
                 </div>

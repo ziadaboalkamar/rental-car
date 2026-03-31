@@ -24,7 +24,7 @@ use App\Http\Controllers\Admin\CarDiscountsController;
 use App\Http\Controllers\Admin\CarDamageReportsController;
 use App\Http\Controllers\Admin\DashboardController;
 
-Route::middleware(['auth', 'verified', 'active', 'admin', 'tenant.subscription'])
+Route::middleware(['auth', 'tenant_verified', 'active', 'admin', 'tenant.subscription'])
     ->prefix('admin')
     ->as('admin.')
     ->group(function () {
