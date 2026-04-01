@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FileUpload from '@/components/ViltFilePond/FileUpload.vue';
 import SuperAdminLayout from '@/layouts/SuperAdminLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
@@ -12,10 +13,11 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
     plans: Array<{ id: number; name: string }>;
+    logoFiles: Array<{ id: number; url: string }>;
 }>();
 
 const form = useForm({
@@ -29,9 +31,12 @@ const form = useForm({
     admin_email: '',
     admin_password: '',
     admin_password_confirmation: '',
+    logo_temp_folders: [] as string[],
 });
 
 const slugManuallyEdited = ref(false);
+const fileUploadRef = ref<InstanceType<typeof FileUpload> | null>(null);
+const logoTempFolders = ref<string[]>([]);
 
 const slugify = (value: string) =>
     value
@@ -59,9 +64,25 @@ watch(() => form.slug, (newSlug) => {
     slugManuallyEdited.value = newSlug !== slugify(form.name);
 });
 
+watch(
+    logoTempFolders,
+    (value) => {
+        form.logo_temp_folders = [...value];
+    },
+    { deep: true },
+);
+
+const previewLogoUrl = computed(() => props.logoFiles?.[0]?.url || '/logo/logo.png');
+
 const submit = () => {
     form.post('/superadmin/tenants', {
         preserveScroll: true,
+        forceFormData: true,
+        onSuccess: () => {
+            logoTempFolders.value = [];
+            form.logo_temp_folders = [];
+            fileUploadRef.value?.resetFiles();
+        },
     });
 };
 </script>
@@ -154,6 +175,27 @@ const submit = () => {
                             />
                             <div v-if="form.errors.phone" class="text-sm text-red-600">
                                 {{ form.errors.phone }}
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <Label>Tenant Logo</Label>
+                            <FileUpload
+                                ref="fileUploadRef"
+                                v-model="logoTempFolders"
+                                :initial-files="logoFiles || []"
+                                :allow-multiple="false"
+                                :max-files="1"
+                                collection="logo"
+                                theme="light"
+                                width="100%"
+                            />
+                            <p class="text-xs text-muted-foreground">
+                                Optional. This logo will be used as the tenant website logo immediately after creation.
+                            </p>
+                            <div class="rounded-lg border bg-muted/30 p-4">
+                                <div class="mb-2 text-xs uppercase text-muted-foreground">Preview</div>
+                                <img :src="previewLogoUrl" alt="Tenant logo preview" class="h-14 object-contain" />
                             </div>
                         </div>
 

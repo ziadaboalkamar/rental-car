@@ -39,6 +39,18 @@ const props = defineProps<{
         type: string;
         stripe_status: string;
     }>;
+    trafficSources?: Array<{
+        source: string;
+        visits: number;
+    }>;
+    recentSaasVisits?: Array<{
+        id: number;
+        landing_path: string;
+        source: string;
+        medium: string | null;
+        campaign: string | null;
+        visited_at: string;
+    }>;
 }>();
 const { t, locale } = useTrans();
 const numberLocale = computed(() => (locale.value === 'ar' ? 'ar' : 'en-US'));
@@ -278,6 +290,86 @@ const formatSubscriptionAmount = (amount: number | null, currency: string | null
                     <div v-else class="py-8 text-center text-muted-foreground">No subscriptions found yet.</div>
                 </CardContent>
             </Card>
+
+            <div class="grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]">
+                <Card>
+                    <CardHeader>
+                        <CardTitle>SaaS Traffic Sources</CardTitle>
+                        <CardDescription>Where visitors reached the main SaaS landing page from in the last 30 days.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div v-if="props.trafficSources && props.trafficSources.length > 0" class="space-y-3">
+                            <div
+                                v-for="source in props.trafficSources"
+                                :key="source.source"
+                                class="flex items-center justify-between rounded-lg border p-3"
+                            >
+                                <span class="truncate text-sm font-medium">{{ source.source }}</span>
+                                <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                                    {{ source.visits }} visits
+                                </span>
+                            </div>
+                        </div>
+                        <div v-else class="py-8 text-center text-muted-foreground">
+                            No landing page visits tracked yet.
+                        </div>
+                    </CardContent>
+                </Card>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Recent SaaS Visits</CardTitle>
+                        <CardDescription>Latest visits to the public SaaS home page with their tracked source.</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <div v-if="props.recentSaasVisits && props.recentSaasVisits.length > 0" class="overflow-x-auto">
+                            <table class="min-w-full divide-y divide-border">
+                                <thead>
+                                    <tr>
+                                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                            Source
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                            Medium
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                            Campaign
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                            Path
+                                        </th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                                            Date
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-border">
+                                    <tr v-for="visit in props.recentSaasVisits" :key="visit.id">
+                                        <td class="whitespace-nowrap px-4 py-3 text-sm font-medium">
+                                            {{ visit.source }}
+                                        </td>
+                                        <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                            {{ visit.medium || '-' }}
+                                        </td>
+                                        <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                            {{ visit.campaign || '-' }}
+                                        </td>
+                                        <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                            {{ visit.landing_path }}
+                                        </td>
+                                        <td class="whitespace-nowrap px-4 py-3 text-sm">
+                                            {{ formatDateTime(visit.visited_at) }}
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-else class="py-8 text-center text-muted-foreground">
+                            No landing page visits tracked yet.
+                        </div>
+                    </CardContent>
+                </Card>
+            </div>
         </main>
     </SuperAdminLayout>
 </template>

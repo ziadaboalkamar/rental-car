@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import FileUpload from '@/components/ViltFilePond/FileUpload.vue';
 import SuperAdminLayout from '@/layouts/SuperAdminLayout.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { Button } from '@/components/ui/button';
@@ -12,6 +13,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
     tenant: {
@@ -24,9 +26,11 @@ const props = defineProps<{
         plan_id: number | null;
         subscription_plan?: { id: number; name: string } | null;
         is_active: boolean;
+        logo_url: string | null;
     };
     plans: Array<{ id: number; name: string }>;
     admin_user: { id: number; name: string; email: string } | null;
+    logoFiles: Array<{ id: number; url: string }>;
 }>();
 
 const form = useForm({
@@ -39,12 +43,48 @@ const form = useForm({
     is_active: props.tenant.is_active,
     admin_password: '',
     admin_password_confirmation: '',
+    logo_temp_folders: [] as string[],
+    logo_removed_files: [] as number[],
 });
 
+const fileUploadRef = ref<InstanceType<typeof FileUpload> | null>(null);
+const logoTempFolders = ref<string[]>([]);
+const logoRemovedFileIds = ref<number[]>([]);
+
+watch(
+    logoTempFolders,
+    (value) => {
+        form.logo_temp_folders = [...value];
+    },
+    { deep: true },
+);
+
+const handleLogoFileRemoved = (data: { type: string; fileId?: number }) => {
+    if (data.type === 'existing' && data.fileId) {
+        logoRemovedFileIds.value.push(data.fileId);
+        form.logo_removed_files = [...new Set(logoRemovedFileIds.value)];
+    }
+};
+
+const previewLogoUrl = computed(() => props.logoFiles?.[0]?.url || props.tenant.logo_url || '/logo/logo.png');
+
 const submit = () => {
-    form.put(`/superadmin/tenants/${props.tenant.id}`, {
-        preserveScroll: true,
-    });
+    form
+        .transform((data) => ({
+            ...data,
+            _method: 'put',
+        }))
+        .post(`/superadmin/tenants/${props.tenant.id}`, {
+            preserveScroll: true,
+            forceFormData: true,
+            onSuccess: () => {
+                logoTempFolders.value = [];
+                form.logo_temp_folders = [];
+                form.logo_removed_files = [];
+                logoRemovedFileIds.value = [];
+                fileUploadRef.value?.resetFiles();
+            },
+        });
 };
 </script>
 
@@ -136,6 +176,28 @@ const submit = () => {
                             />
                             <div v-if="form.errors.phone" class="text-sm text-red-600">
                                 {{ form.errors.phone }}
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <Label>Tenant Logo</Label>
+                            <FileUpload
+                                ref="fileUploadRef"
+                                v-model="logoTempFolders"
+                                :initial-files="logoFiles || []"
+                                :allow-multiple="false"
+                                :max-files="1"
+                                collection="logo"
+                                theme="light"
+                                width="100%"
+                                @file-removed="handleLogoFileRemoved"
+                            />
+                            <p class="text-xs text-muted-foreground">
+                                Optional. Upload a tenant-specific logo or replace the existing one.
+                            </p>
+                            <div class="rounded-lg border bg-muted/30 p-4">
+                                <div class="mb-2 text-xs uppercase text-muted-foreground">Preview</div>
+                                <img :src="previewLogoUrl" alt="Tenant logo preview" class="h-14 object-contain" />
                             </div>
                         </div>
 

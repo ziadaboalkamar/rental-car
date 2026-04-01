@@ -7,6 +7,7 @@ use App\Core\TenantContext;
 use App\Core\LandingPageSettings;
 use App\Models\Car;
 use App\Models\Plan;
+use App\Models\SaasVisit;
 use App\Models\SiteSetting;
 use App\Models\Tenant;
 use App\Models\Ticket;
@@ -29,6 +30,8 @@ class HomePagesController extends Controller
     public function index()
     {
         if (!TenantContext::get()) {
+            $this->recordSaasLandingVisit(request());
+
             $stored = SiteSetting::query()
                 ->where('key', LandingPageSettings::KEY)
                 ->value('value');
@@ -82,6 +85,56 @@ class HomePagesController extends Controller
             ->get();
 
         return inertia('Welcome', compact('homeCars'));
+    }
+
+    private function recordSaasLandingVisit(Request $request): void
+    {
+        if (!$request->isMethod('get') || $request->expectsJson()) {
+            return;
+        }
+
+        $referrer = trim((string) $request->headers->get('referer'));
+
+        SaasVisit::query()->create([
+            'session_id' => $request->hasSession() ? $request->session()->getId() : null,
+            'landing_path' => '/'.$request->path('/'),
+            'referrer_url' => $referrer !== '' ? $referrer : null,
+            'referrer_host' => $this->parseUrlComponent($referrer, PHP_URL_HOST),
+            'referrer_path' => $this->parseUrlComponent($referrer, PHP_URL_PATH),
+            'utm_source' => $this->nullableQueryParam($request, 'utm_source'),
+            'utm_medium' => $this->nullableQueryParam($request, 'utm_medium'),
+            'utm_campaign' => $this->nullableQueryParam($request, 'utm_campaign'),
+            'utm_content' => $this->nullableQueryParam($request, 'utm_content'),
+            'utm_term' => $this->nullableQueryParam($request, 'utm_term'),
+            'ip_address' => $request->ip(),
+            'user_agent' => $this->nullableString($request->userAgent()),
+            'visited_at' => now(),
+        ]);
+    }
+
+    private function parseUrlComponent(?string $url, int $component): ?string
+    {
+        $url = trim((string) ($url ?? ''));
+
+        if ($url === '') {
+            return null;
+        }
+
+        $value = parse_url($url, $component);
+
+        return is_string($value) && trim($value) !== '' ? trim($value) : null;
+    }
+
+    private function nullableQueryParam(Request $request, string $key): ?string
+    {
+        return $this->nullableString($request->query($key));
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        return $value === '' ? null : $value;
     }
 
     public function fleet(Request $request)

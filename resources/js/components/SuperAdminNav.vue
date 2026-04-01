@@ -33,6 +33,7 @@ import {
     LifeBuoy,
     Palette,
     Mail,
+    ShieldAlert,
 } from 'lucide-vue-next';
 
 import { type NavItem } from '@/types';
@@ -131,6 +132,7 @@ const superAdminNav = computed<NavItem[]>(() => [
             { title: 'Payment Providers', href: '/superadmin/settings/payment-providers', icon: CreditCard },
             { title: 'Languages', href: '/superadmin/settings/languages', icon: Cog },
             { title: 'Emails', href: '/superadmin/settings/emails', icon: Mail },
+            { title: 'Security Access', href: '/superadmin/settings/security-access', icon: ShieldAlert },
         ],
     },
 ]);

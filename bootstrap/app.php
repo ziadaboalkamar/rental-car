@@ -48,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(prepend: [
             \App\Http\Middleware\IdentifyTenant::class,
+            \App\Http\Middleware\EnforceSecurityAccess::class,
         ]);
 
         $middleware->web(append: [

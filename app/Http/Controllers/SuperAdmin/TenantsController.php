@@ -5,6 +5,7 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Enums\UserRole;
 use App\Models\Plan;
 use App\Models\Tenant;
+use App\Models\TenantSiteSetting;
 use App\Models\User;
 use App\Notifications\TenantAdminInvitationNotification;
 use Illuminate\Http\Request;
@@ -14,9 +15,14 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
+use MohamedGaldi\ViltFilepond\Services\FilePondService;
 
 class TenantsController
 {
+    public function __construct(private readonly FilePondService $filePondService)
+    {
+    }
+
     /**
      * Display a listing of tenants.
      */
@@ -44,6 +50,7 @@ class TenantsController
                 ->orderBy('monthly_price')
                 ->orderBy('name')
                 ->get(['id', 'name']),
+            'logoFiles' => [],
         ]);
     }
 
@@ -64,6 +71,8 @@ class TenantsController
             'email' => 'required|email|unique:tenants,email',
             'phone' => 'nullable|string|max:20',
             'plan_id' => ['required', 'integer', Rule::exists('plans', 'id')->where(static fn ($query) => $query->where('is_active', true))],
+            'logo_temp_folders' => ['array'],
+            'logo_temp_folders.*' => ['string'],
             'admin_name' => 'required|string|max:255',
             'admin_email' => 'required|email|unique:users,email',
             'admin_password' => ['required', 'confirmed', Rules\Password::defaults()],
@@ -93,6 +102,18 @@ class TenantsController
 
         $adminUser->notify(new TenantAdminInvitationNotification($tenant));
 
+        $siteSetting = TenantSiteSetting::query()->firstOrCreate(
+            ['tenant_id' => $tenant->id],
+            ['site_name' => $tenant->name]
+        );
+
+        $this->filePondService->handleFileUpdates(
+            $siteSetting,
+            is_array($request->input('logo_temp_folders', [])) ? $request->input('logo_temp_folders', []) : [],
+            [],
+            'logo'
+        );
+
         return redirect()
             ->route('superadmin.tenants.show', $tenant)
             ->with('success', 'Tenant created and the admin activation email has been sent.');
@@ -120,6 +141,8 @@ class TenantsController
      */
     public function edit(Tenant $tenant): Response
     {
+        $tenant->loadMissing('siteSetting.files');
+
         $adminUser = User::withoutGlobalScope('tenant')
             ->where('tenant_id', $tenant->id)
             ->where('role', UserRole::ADMIN)
@@ -132,13 +155,34 @@ class TenantsController
             ->get(['id', 'name']);
 
         return Inertia::render('SuperAdmin/Tenants/Edit', [
-            'tenant' => $tenant,
+            'tenant' => [
+                'id' => $tenant->id,
+                'name' => $tenant->name,
+                'slug' => $tenant->slug,
+                'domain' => $tenant->domain,
+                'email' => $tenant->email,
+                'phone' => $tenant->phone,
+                'plan_id' => $tenant->plan_id,
+                'is_active' => $tenant->is_active,
+                'logo_url' => TenantSiteSetting::forTenant($tenant)['logo_url'],
+            ],
             'plans' => $plans,
             'admin_user' => $adminUser ? [
                 'id' => $adminUser->id,
                 'name' => $adminUser->name,
                 'email' => $adminUser->email,
             ] : null,
+            'logoFiles' => $tenant->siteSetting
+                ? $tenant->siteSetting->files()
+                    ->where('collection', 'logo')
+                    ->get()
+                    ->map(fn ($file) => [
+                        'id' => $file->id,
+                        'url' => TenantSiteSetting::publicUrlFromPath($file->path),
+                    ])
+                    ->values()
+                    ->all()
+                : [],
         ]);
     }
 
@@ -160,6 +204,10 @@ class TenantsController
             'phone' => 'nullable|string|max:20',
             'plan_id' => ['required', 'integer', Rule::exists('plans', 'id')->where(static fn ($query) => $query->where('is_active', true))],
             'is_active' => 'required|boolean',
+            'logo_temp_folders' => ['array'],
+            'logo_temp_folders.*' => ['string'],
+            'logo_removed_files' => ['array'],
+            'logo_removed_files.*' => ['integer'],
         ];
 
         if ($request->filled('admin_password')) {
@@ -188,6 +236,26 @@ class TenantsController
                 $adminUser->update(['password' => Hash::make($validated['admin_password'])]);
             }
         }
+
+        $siteSetting = TenantSiteSetting::query()->firstOrCreate(
+            ['tenant_id' => $tenant->id],
+            ['site_name' => $tenant->name]
+        );
+
+        $tempFolders = $request->input('logo_temp_folders', []);
+        $removedIds = $request->input('logo_removed_files', []);
+
+        if (!empty($tempFolders)) {
+            $existingIds = $siteSetting->files()->where('collection', 'logo')->pluck('id')->all();
+            $removedIds = array_values(array_unique(array_merge(is_array($removedIds) ? $removedIds : [], $existingIds)));
+        }
+
+        $this->filePondService->handleFileUpdates(
+            $siteSetting,
+            is_array($tempFolders) ? $tempFolders : [],
+            is_array($removedIds) ? $removedIds : [],
+            'logo'
+        );
 
         return redirect()
             ->route('superadmin.tenants.show', $tenant)

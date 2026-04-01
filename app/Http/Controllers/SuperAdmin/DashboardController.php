@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\Reservation;
 use App\Models\Payment;
+use App\Models\SaasVisit;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -72,12 +73,47 @@ class DashboardController
             ->limit(10)
             ->get();
 
+        $trafficSources = DB::table('saas_visits')
+            ->selectRaw("COALESCE(NULLIF(utm_source, ''), NULLIF(referrer_host, ''), 'Direct') as source")
+            ->selectRaw('COUNT(*) as visits')
+            ->where('visited_at', '>=', now()->subDays(30))
+            ->groupBy('source')
+            ->orderByDesc('visits')
+            ->limit(8)
+            ->get();
+
+        $recentSaasVisits = SaasVisit::query()
+            ->latest('visited_at')
+            ->limit(10)
+            ->get([
+                'id',
+                'landing_path',
+                'referrer_host',
+                'utm_source',
+                'utm_medium',
+                'utm_campaign',
+                'visited_at',
+            ])
+            ->map(function (SaasVisit $visit) {
+                return [
+                    'id' => $visit->id,
+                    'landing_path' => $visit->landing_path,
+                    'source' => $visit->utm_source ?: ($visit->referrer_host ?: 'Direct'),
+                    'medium' => $visit->utm_medium,
+                    'campaign' => $visit->utm_campaign,
+                    'visited_at' => $visit->visited_at?->toISOString(),
+                ];
+            })
+            ->values();
+
         return Inertia::render('SuperAdmin/Dashboard', [
             'stats' => $stats,
             'recentTenants' => $recentTenants,
             'monthlyRevenue' => $monthlyRevenue,
             'recentSubscriptions' => $recentSubscriptions,
             'tenants' => $tenants,
+            'trafficSources' => $trafficSources,
+            'recentSaasVisits' => $recentSaasVisits,
         ]);
     }
 }
