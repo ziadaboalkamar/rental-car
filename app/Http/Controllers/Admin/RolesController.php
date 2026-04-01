@@ -47,8 +47,20 @@ class RolesController extends Controller
             return redirect()->back()->with('restricted_action', 'This is a demo version. For security reasons, create, update, and delete actions are disabled.');
         }
 
+        $tenantId = $this->tenantId();
+
+        $request->merge([
+            'name' => Str::slug((string) $request->input('display_name')),
+        ]);
+
         $validated = $request->validate([
             'display_name' => ['required', 'string', 'max:255'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('roles', 'name')->where(fn ($query) => $query->where('tenant_id', $tenantId)),
+            ],
             'description' => ['nullable', 'string', 'max:500'],
             'permission_ids' => ['nullable', 'array'],
             'permission_ids.*' => [
@@ -58,18 +70,11 @@ class RolesController extends Controller
             ],
         ]);
 
-        $name = Str::slug($validated['display_name']);
-        // Ensure name is unique for this tenant
-        $count = Role::where('name', $name)->count();
-        if ($count > 0) {
-            $name .= '-' . time();
-        }
-
         $role = Role::create([
-            'name' => $name,
+            'name' => $validated['name'],
             'display_name' => $validated['display_name'],
             'description' => $validated['description'],
-            'tenant_id' => $this->tenantId(),
+            'tenant_id' => $tenantId,
         ]);
 
         $permissionIds = collect($validated['permission_ids'] ?? [])
@@ -116,8 +121,22 @@ class RolesController extends Controller
             return redirect()->back()->with('restricted_action', 'This is a demo version. For security reasons, create, update, and delete actions are disabled.');
         }
 
+        $tenantId = $this->tenantId();
+
+        $request->merge([
+            'name' => Str::slug((string) $request->input('display_name')),
+        ]);
+
         $validated = $request->validate([
             'display_name' => ['required', 'string', 'max:255'],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('roles', 'name')
+                    ->ignore($role->id)
+                    ->where(fn ($query) => $query->where('tenant_id', $tenantId)),
+            ],
             'description' => ['nullable', 'string', 'max:500'],
             'permission_ids' => ['nullable', 'array'],
             'permission_ids.*' => [
@@ -128,6 +147,7 @@ class RolesController extends Controller
         ]);
 
         $role->update([
+            'name' => $validated['name'],
             'display_name' => $validated['display_name'],
             'description' => $validated['description'],
         ]);

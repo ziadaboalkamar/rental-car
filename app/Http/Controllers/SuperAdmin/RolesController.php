@@ -5,6 +5,7 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Models\Permission;
 use App\Models\Role;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -15,7 +16,9 @@ class RolesController
      */
     public function index(): Response
     {
-        $roles = Role::with('permissions:id,name,display_name')
+        $roles = Role::withoutGlobalScope('tenant')
+            ->whereNull('tenant_id')
+            ->with('permissions:id,name,display_name')
             ->orderBy('name')
             ->get();
 
@@ -43,17 +46,23 @@ public function store(Request $request)
 {
 
     $validated = $request->validate([
-        'name' => 'required|string|max:255|unique:roles,name',
+        'name' => [
+            'required',
+            'string',
+            'max:255',
+            Rule::unique('roles', 'name')->where(fn ($query) => $query->whereNull('tenant_id')),
+        ],
         'display_name' => 'nullable|string|max:255',
         'description' => 'nullable|string|max:500',
         'permission_ids' => 'array',
         'permission_ids.*' => 'exists:permissions,id',
     ]);
 
-    $role = Role::create([
+    $role = Role::withoutGlobalScope('tenant')->create([
         'name' => $validated['name'],
         'display_name' => $validated['display_name'] ?? null,
         'description' => $validated['description'] ?? null,
+        'tenant_id' => null,
     ]);
 
     // Laratrust uses syncPermissions() - but it expects Permission models or IDs
@@ -71,6 +80,8 @@ public function store(Request $request)
      */
     public function edit(Role $role): Response
     {
+        abort_unless($role->tenant_id === null, 404);
+
         $role->load('permissions');
         $permissions = Permission::orderBy('name')->get(['id', 'name', 'display_name', 'description']);
 
@@ -85,8 +96,17 @@ public function store(Request $request)
      */
     public function update(Request $request, Role $role)
     {
+        abort_unless($role->tenant_id === null, 404);
+
         $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:roles,name,' . $role->id,
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('roles', 'name')
+                    ->ignore($role->id)
+                    ->where(fn ($query) => $query->whereNull('tenant_id')),
+            ],
             'display_name' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:500',
             'permission_ids' => 'array',
@@ -117,6 +137,8 @@ public function store(Request $request)
      */
     public function destroy(Role $role)
     {
+        abort_unless($role->tenant_id === null, 404);
+
         $role->delete();
 
         return redirect()

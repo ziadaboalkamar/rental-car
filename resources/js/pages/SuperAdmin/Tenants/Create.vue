@@ -12,7 +12,7 @@ import {
     SelectValue,
 } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { watch } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps<{
     plans: Array<{ id: number; name: string }>;
@@ -31,11 +31,32 @@ const form = useForm({
     admin_password_confirmation: '',
 });
 
-watch(() => form.name, (newName) => {
-    // Only auto-generate slug if it hasn't been manually edited or is empty
-    if (!form.slug || form.slug === '') {
-        form.slug = newName.toLowerCase().replace(/ /g, '-').replace(/[^\w-]+/g, '');
+const slugManuallyEdited = ref(false);
+
+const slugify = (value: string) =>
+    value
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^\w-]+/g, '')
+        .replace(/-{2,}/g, '-')
+        .replace(/^-+|-+$/g, '');
+
+watch(() => form.name, (newName, oldName) => {
+    const previousAutoSlug = slugify(oldName ?? '');
+
+    if (!slugManuallyEdited.value || !form.slug || form.slug === previousAutoSlug) {
+        form.slug = slugify(newName);
     }
+});
+
+watch(() => form.slug, (newSlug) => {
+    if (!newSlug) {
+        slugManuallyEdited.value = false;
+        return;
+    }
+
+    slugManuallyEdited.value = newSlug !== slugify(form.name);
 });
 
 const submit = () => {
