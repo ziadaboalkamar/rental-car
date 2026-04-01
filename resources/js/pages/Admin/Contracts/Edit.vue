@@ -92,6 +92,7 @@ function buildDriver(driver: any, role: 'primary' | 'additional') {
     client_id: payload.client_id ?? null,
     role,
     full_name: String(payload.full_name || ''),
+    full_name_ar: String(payload.full_name_ar || ''),
     phone: String(payload.phone || ''),
     nationality: String(payload.nationality || ''),
     date_of_birth: String(payload.date_of_birth || ''),
@@ -104,6 +105,7 @@ function buildDriver(driver: any, role: 'primary' | 'additional') {
     extracted_data: payload.extracted_data || null,
     raw_output: payload.raw_output || null,
     confidence: payload.confidence ?? null,
+    ai_reviewed: Boolean(payload.ai_reviewed || false),
     notes: String(payload.notes || ''),
     document_type: type,
     documents: [documentSlot('front', docs, type), documentSlot('back', docs, type)],
@@ -282,6 +284,7 @@ function driverTempFolders(driver: any): string[] {
 function applyExtractedFields(driver: any, fields: Record<string, any>) {
   const allowedKeys = [
     'full_name',
+    'full_name_ar',
     'nationality',
     'date_of_birth',
     'identity_number',
@@ -296,6 +299,11 @@ function applyExtractedFields(driver: any, fields: Record<string, any>) {
     if (value === null || value === undefined || value === '') return;
     driver[key] = String(value);
   });
+}
+
+function hasAiExtractedData(driver: any) {
+  return Boolean(driver?.extracted_data && Object.keys(driver.extracted_data).length > 0)
+    || driver?.extraction_status === 'extracted';
 }
 
 async function extractDriver(driver: any, role: 'primary' | 'additional', index: number | null = null) {
@@ -351,6 +359,7 @@ async function extractDriver(driver: any, role: 'primary' | 'additional', index:
     driver.raw_output = payload.raw_output || null;
     driver.confidence = typeof payload.confidence === 'number' ? payload.confidence : null;
     driver.extraction_status = payload.status || 'extracted';
+    driver.ai_reviewed = false;
     driver.extract_success = payload.message || 'Document extraction completed.';
   } catch (error) {
     driver.extract_error = error instanceof Error ? error.message : 'Driver extraction failed.';
@@ -459,6 +468,9 @@ function submit() {
             <h2 class="text-lg font-semibold">Customer Data</h2>
             <p class="text-sm text-muted-foreground">Primary driver details and document uploads.</p>
           </div>
+          <div v-if="hasAiExtractedData(form.primary_driver)" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Review the extracted AI data carefully before saving this contract.
+          </div>
           <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div>
               <Label for="primary-document-type">Document Type</Label>
@@ -467,6 +479,7 @@ function submit() {
               </select>
             </div>
             <div><Label for="primary-full-name">Full Name</Label><Input id="primary-full-name" v-model="form.primary_driver.full_name" /><InputError :message="form.errors['primary_driver.full_name']" class="mt-1" /></div>
+            <div><Label for="primary-full-name-ar">Arabic Name</Label><Input id="primary-full-name-ar" v-model="form.primary_driver.full_name_ar" dir="rtl" /><InputError :message="form.errors['primary_driver.full_name_ar']" class="mt-1" /></div>
             <div><Label for="primary-phone">Phone</Label><Input id="primary-phone" v-model="form.primary_driver.phone" /></div>
             <div><Label for="primary-nationality">Nationality</Label><Input id="primary-nationality" v-model="form.primary_driver.nationality" /></div>
             <div><Label for="primary-birth-date">Date Of Birth</Label><Input id="primary-birth-date" v-model="form.primary_driver.date_of_birth" type="date" /></div>
@@ -494,6 +507,13 @@ function submit() {
             <p v-if="form.primary_driver.extract_error" class="text-sm text-red-600">{{ form.primary_driver.extract_error }}</p>
             <p v-if="form.primary_driver.confidence !== null" class="text-sm text-muted-foreground">Confidence: {{ Number(form.primary_driver.confidence).toFixed(2) }}</p>
           </div>
+          <div v-if="hasAiExtractedData(form.primary_driver)" class="space-y-1">
+            <label class="flex items-center gap-2 text-sm font-medium text-foreground">
+              <input v-model="form.primary_driver.ai_reviewed" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+              I reviewed the AI extracted data and confirm it is correct.
+            </label>
+            <InputError :message="form.errors['primary_driver.ai_reviewed']" class="mt-1" />
+          </div>
         </section>
 
         <section class="space-y-4 rounded-lg border bg-white p-5 shadow-sm">
@@ -513,6 +533,9 @@ function submit() {
               </div>
               <Button type="button" variant="ghost" @click="removeAdditionalDriver(index)">Remove</Button>
             </div>
+            <div v-if="hasAiExtractedData(driver)" class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Review the extracted AI data carefully before saving this contract.
+            </div>
             <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div>
                 <Label :for="`driver-document-type-${index}`">Document Type</Label>
@@ -521,6 +544,7 @@ function submit() {
                 </select>
               </div>
               <div><Label :for="`driver-full-name-${index}`">Full Name</Label><Input :id="`driver-full-name-${index}`" v-model="driver.full_name" /></div>
+              <div><Label :for="`driver-full-name-ar-${index}`">Arabic Name</Label><Input :id="`driver-full-name-ar-${index}`" v-model="driver.full_name_ar" dir="rtl" /><InputError :message="form.errors[`additional_drivers.${index}.full_name_ar`]" class="mt-1" /></div>
               <div><Label :for="`driver-phone-${index}`">Phone</Label><Input :id="`driver-phone-${index}`" v-model="driver.phone" /></div>
               <div><Label :for="`driver-nationality-${index}`">Nationality</Label><Input :id="`driver-nationality-${index}`" v-model="driver.nationality" /></div>
               <div><Label :for="`driver-birth-date-${index}`">Date Of Birth</Label><Input :id="`driver-birth-date-${index}`" v-model="driver.date_of_birth" type="date" /></div>
@@ -547,6 +571,13 @@ function submit() {
               <p v-if="driver.extract_success" class="text-sm text-emerald-600">{{ driver.extract_success }}</p>
               <p v-if="driver.extract_error" class="text-sm text-red-600">{{ driver.extract_error }}</p>
               <p v-if="driver.confidence !== null" class="text-sm text-muted-foreground">Confidence: {{ Number(driver.confidence).toFixed(2) }}</p>
+            </div>
+            <div v-if="hasAiExtractedData(driver)" class="space-y-1">
+              <label class="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input v-model="driver.ai_reviewed" type="checkbox" class="h-4 w-4 rounded border-gray-300" />
+                I reviewed the AI extracted data and confirm it is correct.
+              </label>
+              <InputError :message="form.errors[`additional_drivers.${index}.ai_reviewed`]" class="mt-1" />
             </div>
           </div>
         </section>

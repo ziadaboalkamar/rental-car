@@ -2,12 +2,16 @@
 
 namespace App\Services\Contracts;
 
+use App\Core\AiProviderSettings;
 use App\Services\ClientDocuments\LocalClientDocumentExtractor;
+use App\Services\ClientDocuments\OpenAiClientDocumentExtractor;
+use RuntimeException;
 
 class ContractDriverDocumentExtractor
 {
     public function __construct(
-        private LocalClientDocumentExtractor $localClientDocumentExtractor
+        private LocalClientDocumentExtractor $localClientDocumentExtractor,
+        private OpenAiClientDocumentExtractor $openAiClientDocumentExtractor
     ) {
     }
 
@@ -24,7 +28,7 @@ class ContractDriverDocumentExtractor
      */
     public function extractFromTempFolders(array $tempFolders, string $documentType): array
     {
-        $result = $this->localClientDocumentExtractor->extractFromTempFolders($tempFolders, $documentType);
+        $result = $this->resolveExtractor()->extractFromTempFolders($tempFolders, $documentType);
 
         return [
             'fields' => $this->mapFields($result['fields'], $documentType),
@@ -34,6 +38,22 @@ class ContractDriverDocumentExtractor
             'provider' => $result['provider'],
             'engine' => $result['engine'],
         ];
+    }
+
+    private function resolveExtractor(): LocalClientDocumentExtractor|OpenAiClientDocumentExtractor
+    {
+        $settings = AiProviderSettings::load();
+        $provider = (string) ($settings['provider'] ?? 'openai');
+
+        if ($provider === 'openai' && AiProviderSettings::isConfiguredForCurrentProvider()) {
+            return $this->openAiClientDocumentExtractor;
+        }
+
+        if (!config('local_ocr.enabled', true)) {
+            throw new RuntimeException('OpenAI is not available for this extraction and local OCR is disabled.');
+        }
+
+        return $this->localClientDocumentExtractor;
     }
 
     /**
@@ -47,6 +67,11 @@ class ContractDriverDocumentExtractor
         $fullName = $this->nullableString($fields['full_name'] ?? null);
         if ($fullName !== null) {
             $normalized['full_name'] = $fullName;
+        }
+
+        $fullNameAr = $this->nullableString($fields['full_name_ar'] ?? null);
+        if ($fullNameAr !== null) {
+            $normalized['full_name_ar'] = $fullNameAr;
         }
 
         $nationality = $this->nullableString($fields['nationality'] ?? null);

@@ -19,6 +19,7 @@ class ContractDriver extends Model
         'role',
         'sort_order',
         'full_name',
+        'full_name_ar',
         'phone',
         'nationality',
         'date_of_birth',
@@ -31,6 +32,7 @@ class ContractDriver extends Model
         'extracted_data',
         'raw_output',
         'confidence',
+        'ai_reviewed',
         'notes',
     ];
 
@@ -43,6 +45,7 @@ class ContractDriver extends Model
             'extracted_data' => 'array',
             'raw_output' => 'array',
             'confidence' => 'decimal:4',
+            'ai_reviewed' => 'boolean',
         ];
     }
 

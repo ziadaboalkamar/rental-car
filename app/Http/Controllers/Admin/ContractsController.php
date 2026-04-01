@@ -23,6 +23,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -581,7 +582,7 @@ class ContractsController extends Controller
             $uniqueRule->ignore($ignoreId);
         }
 
-        return $request->validate([
+        $validator = Validator::make($request->all(), [
             'reservation_id' => ['nullable', 'integer', 'exists:reservations,id'],
             'contract_number' => ['nullable', 'string', 'max:100', $uniqueRule],
             'status' => ['required', Rule::in(['draft', 'active', 'completed', 'cancelled'])],
@@ -608,6 +609,7 @@ class ContractsController extends Controller
             'primary_driver.client_id' => ['nullable', 'integer', 'exists:users,id'],
             'primary_driver.role' => ['nullable', Rule::in(['primary'])],
             'primary_driver.full_name' => ['nullable', 'string', 'max:255'],
+            'primary_driver.full_name_ar' => ['nullable', 'string', 'max:255'],
             'primary_driver.phone' => ['nullable', 'string', 'max:100'],
             'primary_driver.nationality' => ['nullable', 'string', 'max:100'],
             'primary_driver.date_of_birth' => ['nullable', 'date'],
@@ -620,6 +622,7 @@ class ContractsController extends Controller
             'primary_driver.extracted_data' => ['nullable', 'array'],
             'primary_driver.raw_output' => ['nullable', 'array'],
             'primary_driver.confidence' => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'primary_driver.ai_reviewed' => ['nullable', 'boolean'],
             'primary_driver.notes' => ['nullable', 'string'],
             'primary_driver.document_type' => ['nullable', 'string', 'max:100'],
             'primary_driver.temp_folders' => ['array'],
@@ -640,6 +643,7 @@ class ContractsController extends Controller
             'additional_drivers.*.client_id' => ['nullable', 'integer', 'exists:users,id'],
             'additional_drivers.*.role' => ['nullable', Rule::in(['additional'])],
             'additional_drivers.*.full_name' => ['nullable', 'string', 'max:255'],
+            'additional_drivers.*.full_name_ar' => ['nullable', 'string', 'max:255'],
             'additional_drivers.*.phone' => ['nullable', 'string', 'max:100'],
             'additional_drivers.*.nationality' => ['nullable', 'string', 'max:100'],
             'additional_drivers.*.date_of_birth' => ['nullable', 'date'],
@@ -652,6 +656,7 @@ class ContractsController extends Controller
             'additional_drivers.*.extracted_data' => ['nullable', 'array'],
             'additional_drivers.*.raw_output' => ['nullable', 'array'],
             'additional_drivers.*.confidence' => ['nullable', 'numeric', 'min:0', 'max:1'],
+            'additional_drivers.*.ai_reviewed' => ['nullable', 'boolean'],
             'additional_drivers.*.notes' => ['nullable', 'string'],
             'additional_drivers.*.document_type' => ['nullable', 'string', 'max:100'],
             'additional_drivers.*.temp_folders' => ['array'],
@@ -682,6 +687,11 @@ class ContractsController extends Controller
             'end_contract_removed_files' => ['array'],
             'end_contract_removed_files.*' => ['integer'],
         ]);
+
+        $validated = $validator->validate();
+        $this->ensureExtractedDriversAreReviewed($validated);
+
+        return $validated;
     }
 
     private function fillContract(Contract $contract, array $validated, ?Reservation $reservation): void
@@ -1033,6 +1043,7 @@ class ContractsController extends Controller
             'id' => $payload['id'] ?? null,
             'client_id' => $payload['client_id'] ?? null,
             'full_name' => $payload['full_name'] ?? $validated['renter_name'] ?? $reservation?->user?->name,
+            'full_name_ar' => $payload['full_name_ar'] ?? null,
             'phone' => $payload['phone'] ?? $validated['renter_phone'] ?? null,
             'nationality' => $payload['nationality'] ?? null,
             'date_of_birth' => $payload['date_of_birth'] ?? null,
@@ -1045,6 +1056,7 @@ class ContractsController extends Controller
             'extracted_data' => is_array($payload['extracted_data'] ?? null) ? $payload['extracted_data'] : null,
             'raw_output' => is_array($payload['raw_output'] ?? null) ? $payload['raw_output'] : null,
             'confidence' => $payload['confidence'] ?? null,
+            'ai_reviewed' => (bool) ($payload['ai_reviewed'] ?? false),
             'notes' => $payload['notes'] ?? null,
             'document_type' => $payload['document_type'] ?? null,
             'temp_folders' => is_array($payload['temp_folders'] ?? null) ? $payload['temp_folders'] : [],
@@ -1120,6 +1132,7 @@ class ContractsController extends Controller
         $driver->role = $role;
         $driver->sort_order = $sortOrder;
         $driver->full_name = $this->nullableString($payload['full_name'] ?? null);
+        $driver->full_name_ar = $this->nullableString($payload['full_name_ar'] ?? null);
         $driver->phone = $this->nullableString($payload['phone'] ?? null);
         $driver->nationality = $this->nullableString($payload['nationality'] ?? null);
         $driver->date_of_birth = $payload['date_of_birth'] ?? null;
@@ -1132,6 +1145,7 @@ class ContractsController extends Controller
         $driver->extracted_data = is_array($payload['extracted_data'] ?? null) && !empty($payload['extracted_data']) ? $payload['extracted_data'] : null;
         $driver->raw_output = is_array($payload['raw_output'] ?? null) && !empty($payload['raw_output']) ? $payload['raw_output'] : null;
         $driver->confidence = isset($payload['confidence']) && is_numeric($payload['confidence']) ? (float) $payload['confidence'] : null;
+        $driver->ai_reviewed = (bool) ($payload['ai_reviewed'] ?? false);
         $driver->notes = $this->nullableString($payload['notes'] ?? null);
     }
 
@@ -1237,6 +1251,7 @@ class ContractsController extends Controller
         $keys = [
             'client_id',
             'full_name',
+            'full_name_ar',
             'phone',
             'nationality',
             'date_of_birth',
@@ -1261,6 +1276,37 @@ class ContractsController extends Controller
         return !empty($payload['temp_folders']) || !empty($payload['documents']);
     }
 
+    private function ensureExtractedDriversAreReviewed(array $validated): void
+    {
+        $messages = [];
+
+        $drivers = [];
+        if (is_array($validated['primary_driver'] ?? null)) {
+            $drivers['primary_driver.ai_reviewed'] = $validated['primary_driver'];
+        }
+
+        foreach (is_array($validated['additional_drivers'] ?? null) ? $validated['additional_drivers'] : [] as $index => $driver) {
+            if (is_array($driver)) {
+                $drivers["additional_drivers.{$index}.ai_reviewed"] = $driver;
+            }
+        }
+
+        foreach ($drivers as $key => $driver) {
+            $hasExtractedData = !empty($driver['extracted_data']) || ($driver['extraction_status'] ?? null) === 'extracted';
+            if (!$hasExtractedData) {
+                continue;
+            }
+
+            if (!((bool) ($driver['ai_reviewed'] ?? false))) {
+                $messages[$key] = 'Please review and approve the AI extracted data before saving.';
+            }
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+    }
+
     private function emptyDriverPayload(string $role = 'primary'): array
     {
         return [
@@ -1268,6 +1314,7 @@ class ContractsController extends Controller
             'client_id' => null,
             'role' => $role,
             'full_name' => '',
+            'full_name_ar' => '',
             'phone' => '',
             'nationality' => '',
             'date_of_birth' => '',
@@ -1280,6 +1327,7 @@ class ContractsController extends Controller
             'extracted_data' => null,
             'raw_output' => null,
             'confidence' => null,
+            'ai_reviewed' => false,
             'notes' => '',
             'document_type' => '',
             'temp_folders' => [],
@@ -1334,6 +1382,7 @@ class ContractsController extends Controller
             'client_id' => $driver->client_id,
             'role' => $driver->role,
             'full_name' => $driver->full_name,
+            'full_name_ar' => $driver->full_name_ar,
             'phone' => $driver->phone,
             'nationality' => $driver->nationality,
             'date_of_birth' => optional($driver->date_of_birth)->toDateString(),
@@ -1346,6 +1395,7 @@ class ContractsController extends Controller
             'extracted_data' => $driver->extracted_data,
             'raw_output' => $driver->raw_output,
             'confidence' => $driver->confidence !== null ? (float) $driver->confidence : null,
+            'ai_reviewed' => (bool) $driver->ai_reviewed,
             'notes' => $driver->notes,
             'document_type' => $driver->documents->first()?->document_type,
             'temp_folders' => [],
