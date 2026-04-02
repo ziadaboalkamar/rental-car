@@ -3,14 +3,13 @@
 namespace App\Http\Controllers\SuperAdmin;
 
 use App\Enums\UserRole;
-use App\Models\Permission;
 use App\Models\Plan;
-use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\TenantSiteSetting;
 use App\Models\User;
 use App\Notifications\TenantAdminInvitationNotification;
 use App\Support\BrandLogoImageResizer;
+use App\Support\TenantAdminAccessSync;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -25,6 +24,7 @@ class TenantsController
     public function __construct(
         private readonly FilePondService $filePondService,
         private readonly BrandLogoImageResizer $brandLogoImageResizer,
+        private readonly TenantAdminAccessSync $tenantAdminAccessSync,
     ) {}
 
     /**
@@ -104,7 +104,7 @@ class TenantsController
             'is_active' => true,
         ]);
 
-        $this->ensureTenantAdminFullAccess($adminUser, $tenant);
+        $this->tenantAdminAccessSync->syncUser($adminUser, $tenant);
         $adminUser->notify(new TenantAdminInvitationNotification($tenant));
 
         $siteSetting = TenantSiteSetting::query()->firstOrCreate(
@@ -261,7 +261,7 @@ class TenantsController
             ->first();
 
         if ($adminUser) {
-            $this->ensureTenantAdminFullAccess($adminUser, $tenant);
+            $this->tenantAdminAccessSync->syncUser($adminUser, $tenant);
         }
 
         $siteSetting = TenantSiteSetting::query()->firstOrCreate(
@@ -337,40 +337,5 @@ class TenantsController
         }
 
         return $normalized !== '' ? $normalized : null;
-    }
-
-    private function ensureTenantAdminFullAccess(User $user, Tenant $tenant): void
-    {
-        if ($user->role !== UserRole::ADMIN || (int) $user->tenant_id !== (int) $tenant->id) {
-            return;
-        }
-
-        $tenantId = (int) $tenant->id;
-
-        $role = Role::withoutGlobalScope('tenant')->firstOrCreate(
-            [
-                'name' => 'tenant-owner',
-                'tenant_id' => $tenantId,
-            ],
-            [
-                'display_name' => 'Tenant Owner',
-                'description' => 'Default full-access role for the tenant account owner.',
-            ]
-        );
-
-        $permissionIds = Permission::withoutGlobalScope('tenant')
-            ->where('name', 'like', 'tenant-%')
-            ->where(function ($query) use ($tenantId) {
-                $query->whereNull('tenant_id')
-                    ->orWhere('tenant_id', $tenantId);
-            })
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values()
-            ->all();
-
-        $role->permissions()->sync($permissionIds);
-        $user->roles()->syncWithoutDetaching([$role->id]);
     }
 }

@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use App\Support\TenantAdminAccessSync;
 use App\Services\Maintenance\MaintenanceScheduleService;
 use App\Services\Rentals\RentalStatusSyncService;
 
@@ -33,6 +34,15 @@ Artisan::command('rentals:sync-statuses {--dry-run}', function () {
     $this->line('Checked at: '.$result['checked_at']);
     $this->line('Mode: '.($dryRun ? 'dry-run' : 'live'));
 })->purpose('Sync reservation lifecycle by date/time and update related car statuses');
+
+Artisan::command('tenants:sync-owner-access', function () {
+    $result = app(TenantAdminAccessSync::class)->syncAllTenants();
+
+    $this->info('Tenant owner access sync completed.');
+    $this->line('Tenants checked: '.$result['tenants']);
+    $this->line('Tenant admins checked: '.$result['admins']);
+    $this->line('Admins synced: '.$result['synced']);
+})->purpose('Backfill tenant-owner role and tenant-* permissions for existing tenant admins');
 
 Schedule::command('maintenance:process-schedule')->everyFiveMinutes();
 Schedule::command('rentals:sync-statuses')->everyFiveMinutes();
