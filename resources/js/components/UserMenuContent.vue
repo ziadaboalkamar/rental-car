@@ -37,19 +37,19 @@ const stripLocalePrefix = (path: string) => {
 
     return path.replace(localeRegex, '') || '/';
 };
-const logoutPath = computed(() => {
+const logoutRoute = computed(() => {
     const currentPath = stripLocalePrefix(String(page.url || '/'));
 
     if (currentPath.startsWith('/superadmin')) {
-        return superadminLogout().url;
+        return superadminLogout();
     }
 
     const slug = page.props?.current_tenant?.slug;
     if (slug) {
-        return tenantLogout(slug).url;
+        return tenantLogout(slug);
     }
 
-    return logout().url;
+    return logout();
 });
 
 defineProps<Props>();
@@ -74,7 +74,8 @@ defineProps<Props>();
     <DropdownMenuItem :as-child="true">
         <Link
             class="block w-full"
-            :href="logoutPath"
+            :href="logoutRoute"
+            method="post"
             @click="handleLogout"
             as="button"
             data-test="logout-button"
