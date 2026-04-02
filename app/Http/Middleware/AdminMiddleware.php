@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Core\TenantContext;
 use App\Enums\UserRole;
+use App\Support\TenantAdminAccessSync;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -11,6 +12,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AdminMiddleware
 {
+    public function __construct(
+        private readonly TenantAdminAccessSync $tenantAdminAccessSync,
+    ) {}
+
     /**
      * Handle an incoming request.
      *
@@ -31,6 +36,13 @@ class AdminMiddleware
             $request->session()->regenerateToken();
 
             abort(403, 'Unauthorized action.');
+        }
+
+        $tenant = TenantContext::get();
+
+        if ($tenant) {
+            $this->tenantAdminAccessSync->syncUser(Auth::user(), $tenant);
+            Auth::setUser(Auth::user()->fresh(['roles.permissions']));
         }
 
         return $next($request);
