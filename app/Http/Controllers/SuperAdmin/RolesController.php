@@ -11,6 +11,13 @@ use Inertia\Response;
 
 class RolesController
 {
+    private function superAdminPermissionsQuery()
+    {
+        return Permission::withoutGlobalScope('tenant')
+            ->whereNull('tenant_id')
+            ->where('name', 'not like', 'tenant-%');
+    }
+
     /**
      * List all roles with their permissions.
      */
@@ -18,7 +25,11 @@ class RolesController
     {
         $roles = Role::withoutGlobalScope('tenant')
             ->whereNull('tenant_id')
-            ->with('permissions:id,name,display_name')
+            ->with(['permissions' => fn ($query) => $query
+                ->withoutGlobalScope('tenant')
+                ->whereNull('permissions.tenant_id')
+                ->where('permissions.name', 'not like', 'tenant-%')
+                ->select('permissions.id', 'permissions.name', 'permissions.display_name')])
             ->orderBy('name')
             ->get();
 
@@ -32,7 +43,9 @@ class RolesController
      */
     public function create(): Response
     {
-        $permissions = Permission::orderBy('name')->get(['id', 'name', 'display_name', 'description']);
+        $permissions = $this->superAdminPermissionsQuery()
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_name', 'description']);
 
         return Inertia::render('SuperAdmin/Roles/Create', [
             'permissions' => $permissions,
@@ -44,6 +57,10 @@ class RolesController
      */
 public function store(Request $request)
 {
+    $allowedPermissionIds = $this->superAdminPermissionsQuery()
+        ->pluck('id')
+        ->map(fn ($id) => (int) $id)
+        ->all();
 
     $validated = $request->validate([
         'name' => [
@@ -55,7 +72,7 @@ public function store(Request $request)
         'display_name' => 'nullable|string|max:255',
         'description' => 'nullable|string|max:500',
         'permission_ids' => 'array',
-        'permission_ids.*' => 'exists:permissions,id',
+        'permission_ids.*' => ['integer', Rule::in($allowedPermissionIds)],
     ]);
 
     $role = Role::withoutGlobalScope('tenant')->create([
@@ -82,8 +99,17 @@ public function store(Request $request)
     {
         abort_unless($role->tenant_id === null, 404);
 
-        $role->load('permissions');
-        $permissions = Permission::orderBy('name')->get(['id', 'name', 'display_name', 'description']);
+        $allowedPermissionIds = $this->superAdminPermissionsQuery()
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $role->load(['permissions' => fn ($query) => $query
+            ->withoutGlobalScope('tenant')
+            ->whereIn('permissions.id', $allowedPermissionIds)]);
+        $permissions = $this->superAdminPermissionsQuery()
+            ->orderBy('name')
+            ->get(['id', 'name', 'display_name', 'description']);
 
         return Inertia::render('SuperAdmin/Roles/Edit', [
             'role' => $role,
@@ -98,6 +124,11 @@ public function store(Request $request)
     {
         abort_unless($role->tenant_id === null, 404);
 
+        $allowedPermissionIds = $this->superAdminPermissionsQuery()
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
         $validated = $request->validate([
             'name' => [
                 'required',
@@ -110,7 +141,7 @@ public function store(Request $request)
             'display_name' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:500',
             'permission_ids' => 'array',
-            'permission_ids.*' => 'exists:permissions,id',
+            'permission_ids.*' => ['integer', Rule::in($allowedPermissionIds)],
         ]);
 
         $role->update([
@@ -121,6 +152,7 @@ public function store(Request $request)
 
         $permissionIds = collect($validated['permission_ids'] ?? [])
             ->map(fn ($id) => (int) $id)
+            ->intersect($allowedPermissionIds)
             ->unique()
             ->values()
             ->all();
