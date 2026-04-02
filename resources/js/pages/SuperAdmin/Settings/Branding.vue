@@ -117,7 +117,7 @@ const submit = () => {
                                 @file-removed="handleLogoFileRemoved"
                             />
                             <p class="text-xs text-muted-foreground">
-                                Upload the SaaS logo here. If no uploaded file exists, the fallback below or <code>/public/logo/logo.png</code> will be used.
+                                Upload the SaaS logo here. Saved logos are normalized to 491 x 200 pixels while preserving aspect ratio. If no uploaded file exists, the fallback below or <code>/public/logo/logo.png</code> will be used.
                             </p>
                         </div>
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Core\TenantContext;
 use App\Http\Controllers\Controller;
 use App\Models\TenantSiteSetting;
+use App\Support\BrandLogoImageResizer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -14,9 +15,10 @@ use MohamedGaldi\ViltFilepond\Services\FilePondService;
 
 class WebsiteSettingsController extends Controller
 {
-    public function __construct(private readonly FilePondService $filePondService)
-    {
-    }
+    public function __construct(
+        private readonly FilePondService $filePondService,
+        private readonly BrandLogoImageResizer $brandLogoImageResizer,
+    ) {}
 
     public function edit(): Response
     {
@@ -274,6 +276,21 @@ class WebsiteSettingsController extends Controller
             is_array($removedIds) ? $removedIds : [],
             'logo'
         );
+
+        if (!empty($tempFolders)) {
+            $logoFile = $siteSetting->files()
+                ->where('collection', 'logo')
+                ->latest('id')
+                ->first();
+
+            if ($logoFile) {
+                $this->brandLogoImageResizer->resize(
+                    $logoFile,
+                    BrandLogoImageResizer::TARGET_WIDTH,
+                    BrandLogoImageResizer::TARGET_HEIGHT
+                );
+            }
+        }
 
         return back()->with('success', 'Website settings updated successfully.');
     }

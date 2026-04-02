@@ -22,6 +22,7 @@ class Ticket extends Model
         'status',
         'channel',
         'user_id',
+        'assigned_to_user_id',
         'guest_name',
         'guest_email',
         'resolved_at',
@@ -54,6 +55,12 @@ class Ticket extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function assignedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to_user_id')
+            ->withoutGlobalScope('tenant');
     }
 
 

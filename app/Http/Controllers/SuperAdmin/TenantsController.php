@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\SuperAdmin;
 
 use App\Enums\UserRole;
+use App\Models\Permission;
 use App\Models\Plan;
+use App\Models\Role;
 use App\Models\Tenant;
 use App\Models\TenantSiteSetting;
 use App\Models\User;
 use App\Notifications\TenantAdminInvitationNotification;
+use App\Support\BrandLogoImageResizer;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -19,9 +22,10 @@ use MohamedGaldi\ViltFilepond\Services\FilePondService;
 
 class TenantsController
 {
-    public function __construct(private readonly FilePondService $filePondService)
-    {
-    }
+    public function __construct(
+        private readonly FilePondService $filePondService,
+        private readonly BrandLogoImageResizer $brandLogoImageResizer,
+    ) {}
 
     /**
      * Display a listing of tenants.
@@ -100,6 +104,7 @@ class TenantsController
             'is_active' => true,
         ]);
 
+        $this->ensureTenantAdminFullAccess($adminUser, $tenant);
         $adminUser->notify(new TenantAdminInvitationNotification($tenant));
 
         $siteSetting = TenantSiteSetting::query()->firstOrCreate(
@@ -113,6 +118,19 @@ class TenantsController
             [],
             'logo'
         );
+
+        $logoFile = $siteSetting->files()
+            ->where('collection', 'logo')
+            ->latest('id')
+            ->first();
+
+        if ($logoFile) {
+            $this->brandLogoImageResizer->resize(
+                $logoFile,
+                BrandLogoImageResizer::TARGET_WIDTH,
+                BrandLogoImageResizer::TARGET_HEIGHT
+            );
+        }
 
         return redirect()
             ->route('superadmin.tenants.show', $tenant)
@@ -237,6 +255,15 @@ class TenantsController
             }
         }
 
+        $adminUser = User::withoutGlobalScope('tenant')
+            ->where('tenant_id', $tenant->id)
+            ->where('role', UserRole::ADMIN)
+            ->first();
+
+        if ($adminUser) {
+            $this->ensureTenantAdminFullAccess($adminUser, $tenant);
+        }
+
         $siteSetting = TenantSiteSetting::query()->firstOrCreate(
             ['tenant_id' => $tenant->id],
             ['site_name' => $tenant->name]
@@ -256,6 +283,21 @@ class TenantsController
             is_array($removedIds) ? $removedIds : [],
             'logo'
         );
+
+        if (!empty($tempFolders)) {
+            $logoFile = $siteSetting->files()
+                ->where('collection', 'logo')
+                ->latest('id')
+                ->first();
+
+            if ($logoFile) {
+                $this->brandLogoImageResizer->resize(
+                    $logoFile,
+                    BrandLogoImageResizer::TARGET_WIDTH,
+                    BrandLogoImageResizer::TARGET_HEIGHT
+                );
+            }
+        }
 
         return redirect()
             ->route('superadmin.tenants.show', $tenant)
@@ -295,5 +337,40 @@ class TenantsController
         }
 
         return $normalized !== '' ? $normalized : null;
+    }
+
+    private function ensureTenantAdminFullAccess(User $user, Tenant $tenant): void
+    {
+        if ($user->role !== UserRole::ADMIN || (int) $user->tenant_id !== (int) $tenant->id) {
+            return;
+        }
+
+        $tenantId = (int) $tenant->id;
+
+        $role = Role::withoutGlobalScope('tenant')->firstOrCreate(
+            [
+                'name' => 'tenant-owner',
+                'tenant_id' => $tenantId,
+            ],
+            [
+                'display_name' => 'Tenant Owner',
+                'description' => 'Default full-access role for the tenant account owner.',
+            ]
+        );
+
+        $permissionIds = Permission::withoutGlobalScope('tenant')
+            ->where('name', 'like', 'tenant-%')
+            ->where(function ($query) use ($tenantId) {
+                $query->whereNull('tenant_id')
+                    ->orWhere('tenant_id', $tenantId);
+            })
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $role->permissions()->sync($permissionIds);
+        $user->roles()->syncWithoutDetaching([$role->id]);
     }
 }

@@ -48,6 +48,7 @@ Route::middleware(['auth', 'active', 'super_admin'])
         Route::middleware('permission:manage-tenants')->group(function () {
             Route::get('support/tenants', [SuperAdminSupportController::class, 'index'])->name('support.tenants.index');
             Route::get('support/tenants/{ticket}', [SuperAdminSupportController::class, 'show'])->name('support.tenants.show');
+            Route::post('support/tenants/{ticket}/assign', [SuperAdminSupportController::class, 'assign'])->name('support.tenants.assign');
             Route::post('support/tenants/{ticket}/reply', [SuperAdminSupportController::class, 'reply'])->name('support.tenants.reply');
             Route::post('support/tenants/{ticket}/close', [SuperAdminSupportController::class, 'close'])->name('support.tenants.close');
         });

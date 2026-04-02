@@ -11,6 +11,9 @@ const props = defineProps<{
         subject: string;
         status: string;
         created_at: string;
+        tenant: { id: number; name: string; slug: string } | null;
+        requester: { id: number; name: string; email: string } | null;
+        assigned_to: { id: number; name: string; email: string } | null;
         messages: Array<{
             id: number;
             message: string;
@@ -66,6 +69,14 @@ function isMine(message: { user_id: number | null; is_superadmin: boolean }): bo
                 <div>
                     <h1 class="text-2xl font-semibold">{{ ticket.subject }}</h1>
                     <p class="text-sm text-muted-foreground">{{ ticket.ticket_number }} • {{ formatDate(ticket.created_at) }}</p>
+                    <p class="mt-2 text-sm text-foreground">
+                        <span class="font-medium">Employee Name:</span>
+                        {{ ticket.assigned_to?.name || 'Unassigned' }}
+                    </p>
+                    <p class="text-sm text-foreground">
+                        <span class="font-medium">Employee Email:</span>
+                        {{ ticket.assigned_to?.email || '-' }}
+                    </p>
                 </div>
                 <div class="flex items-center gap-2">
                     <Link :href="urls.index">

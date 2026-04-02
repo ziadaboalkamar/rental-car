@@ -15,6 +15,7 @@ const props = defineProps<{
             created_at: string;
             tenant: { id: number; name: string; slug: string } | null;
             requester: { name: string; email: string } | null;
+            assigned_to: { id: number; name: string; email: string } | null;
         }>;
         links: Array<{ url: string | null; label: string; active: boolean }>;
     };
@@ -22,9 +23,11 @@ const props = defineProps<{
         search?: string;
         status?: string;
         tenant_id?: number | null;
+        queue?: string;
     };
     statuses: Array<{ value: string; label: string; color: string }>;
     tenants: Array<{ id: number; name: string }>;
+    queues: Array<{ value: string; label: string }>;
     urls: {
         index: string;
     };
@@ -33,6 +36,7 @@ const props = defineProps<{
 const search = ref(props.filters.search ?? '');
 const status = ref(props.filters.status ?? 'all');
 const tenantId = ref(props.filters.tenant_id ? String(props.filters.tenant_id) : 'all');
+const queue = ref(props.filters.queue ?? 'available');
 
 function applyFilters() {
     router.get(
@@ -41,6 +45,7 @@ function applyFilters() {
             search: search.value || null,
             status: status.value === 'all' ? null : status.value,
             tenant_id: tenantId.value === 'all' ? null : Number(tenantId.value),
+            queue: queue.value === 'available' ? null : queue.value,
         },
         { preserveState: true, replace: true },
     );
@@ -70,6 +75,9 @@ function formatDate(value: string): string {
                     <option value="all">All tenants</option>
                     <option v-for="tenant in tenants" :key="tenant.id" :value="String(tenant.id)">{{ tenant.name }}</option>
                 </select>
+                <select v-model="queue" class="h-10 rounded-md border border-input bg-background px-3 text-sm" @change="applyFilters">
+                    <option v-for="item in queues" :key="item.value" :value="item.value">{{ item.label }}</option>
+                </select>
                 <Button @click="applyFilters">Search</Button>
             </div>
 
@@ -82,6 +90,7 @@ function formatDate(value: string): string {
                             <th class="px-4 py-3">Requester</th>
                             <th class="px-4 py-3">Subject</th>
                             <th class="px-4 py-3">Status</th>
+                            <th class="px-4 py-3">Assigned To</th>
                             <th class="px-4 py-3">Created</th>
                             <th class="px-4 py-3"></th>
                         </tr>
@@ -101,13 +110,17 @@ function formatDate(value: string): string {
                             <td class="px-4 py-3 text-sm">
                                 {{ statuses.find((item) => item.value === ticket.status)?.label || ticket.status }}
                             </td>
+                            <td class="px-4 py-3 text-sm">
+                                {{ ticket.assigned_to?.name || 'Unassigned' }}
+                                <div class="text-xs text-muted-foreground">{{ ticket.assigned_to?.email || '' }}</div>
+                            </td>
                             <td class="px-4 py-3 text-sm text-muted-foreground">{{ formatDate(ticket.created_at) }}</td>
                             <td class="px-4 py-3 text-right">
                                 <Link :href="`${urls.index}/${ticket.id}`" class="text-sm font-medium text-primary hover:underline">Open</Link>
                             </td>
                         </tr>
                         <tr v-if="tickets.data.length === 0">
-                            <td colspan="7" class="px-4 py-6 text-center text-sm text-muted-foreground">No tenant support tickets found.</td>
+                            <td colspan="8" class="px-4 py-6 text-center text-sm text-muted-foreground">No tenant support tickets found.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -115,4 +128,3 @@ function formatDate(value: string): string {
         </main>
     </SuperAdminLayout>
 </template>
-

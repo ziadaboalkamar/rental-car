@@ -5,6 +5,7 @@ namespace App\Http\Controllers\SuperAdmin;
 use App\Core\AppBrandingSettings;
 use App\Http\Controllers\Controller;
 use App\Models\SiteSetting;
+use App\Support\BrandLogoImageResizer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,9 +14,10 @@ use MohamedGaldi\ViltFilepond\Services\FilePondService;
 
 class AppBrandingSettingsController extends Controller
 {
-    public function __construct(private readonly FilePondService $filePondService)
-    {
-    }
+    public function __construct(
+        private readonly FilePondService $filePondService,
+        private readonly BrandLogoImageResizer $brandLogoImageResizer,
+    ) {}
 
     public function edit(): Response
     {
@@ -75,6 +77,21 @@ class AppBrandingSettingsController extends Controller
             is_array($removedIds) ? $removedIds : [],
             'logo'
         );
+
+        if (!empty($tempFolders)) {
+            $logoFile = $brandingSetting->files()
+                ->where('collection', 'logo')
+                ->latest('id')
+                ->first();
+
+            if ($logoFile) {
+                $this->brandLogoImageResizer->resize(
+                    $logoFile,
+                    BrandLogoImageResizer::TARGET_WIDTH,
+                    BrandLogoImageResizer::TARGET_HEIGHT
+                );
+            }
+        }
 
         return back()->with('success', 'Application branding updated successfully.');
     }

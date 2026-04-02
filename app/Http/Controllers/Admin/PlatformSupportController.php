@@ -88,6 +88,7 @@ class PlatformSupportController extends Controller
         $ticket->load([
             'tenant:id,name,slug',
             'user:id,name,email',
+            'assignedTo:id,name,email',
             'messages' => fn ($q) => $q->orderBy('created_at'),
             'messages.user:id,name,email,role',
         ]);
@@ -99,6 +100,21 @@ class PlatformSupportController extends Controller
                 'subject' => $ticket->subject,
                 'status' => $ticket->status?->value ?? (string) $ticket->status,
                 'created_at' => $ticket->created_at,
+                'tenant' => $ticket->tenant ? [
+                    'id' => $ticket->tenant->id,
+                    'name' => $ticket->tenant->name,
+                    'slug' => $ticket->tenant->slug,
+                ] : null,
+                'requester' => $ticket->user ? [
+                    'id' => $ticket->user->id,
+                    'name' => $ticket->user->name,
+                    'email' => $ticket->user->email,
+                ] : null,
+                'assigned_to' => $ticket->assignedTo ? [
+                    'id' => $ticket->assignedTo->id,
+                    'name' => $ticket->assignedTo->name,
+                    'email' => $ticket->assignedTo->email,
+                ] : null,
                 'messages' => $ticket->messages->map(fn ($message) => [
                     'id' => $message->id,
                     'message' => $message->message,
@@ -155,4 +171,3 @@ class PlatformSupportController extends Controller
         );
     }
 }
-

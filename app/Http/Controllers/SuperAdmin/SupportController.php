@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\SuperAdmin;
 
 use App\Enums\TicketStatus;
+use App\Enums\UserRole;
 use App\Http\Controllers\Controller;
 use App\Models\Ticket;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -14,13 +16,29 @@ class SupportController extends Controller
 {
     public function index(Request $request): Response
     {
+        $currentUser = $request->user();
         $search = $request->string('search')->toString();
         $status = $request->string('status')->toString();
         $tenantId = (int) $request->integer('tenant_id');
+        $queue = $request->string('queue')->toString() ?: 'available';
 
         $tickets = Ticket::query()
             ->where('channel', 'tenant')
-            ->with(['tenant:id,name,slug,email', 'user:id,name,email'])
+            ->with(['tenant:id,name,slug,email', 'user:id,name,email', 'assignedTo:id,name,email'])
+            ->where(function ($query) use ($currentUser, $queue) {
+                if ($queue === 'mine') {
+                    $query->where('assigned_to_user_id', $currentUser->id);
+                    return;
+                }
+
+                if ($queue === 'unassigned') {
+                    $query->whereNull('assigned_to_user_id');
+                    return;
+                }
+
+                $query->whereNull('assigned_to_user_id')
+                    ->orWhere('assigned_to_user_id', $currentUser->id);
+            })
             ->when($status && $status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($tenantId > 0, fn ($q) => $q->where('tenant_id', $tenantId))
             ->when($search, function ($q) use ($search) {
@@ -48,6 +66,11 @@ class SupportController extends Controller
                     'requester' => $ticket->user ? [
                         'name' => $ticket->user->name,
                         'email' => $ticket->user->email,
+                    ] : null,
+                    'assigned_to' => $ticket->assignedTo ? [
+                        'id' => $ticket->assignedTo->id,
+                        'name' => $ticket->assignedTo->name,
+                        'email' => $ticket->assignedTo->email,
                     ] : null,
                 ];
             })
@@ -77,9 +100,15 @@ class SupportController extends Controller
                 'search' => $search,
                 'status' => $status,
                 'tenant_id' => $tenantId > 0 ? $tenantId : null,
+                'queue' => $queue,
             ],
             'statuses' => $statuses,
             'tenants' => $tenantOptions,
+            'queues' => [
+                ['value' => 'available', 'label' => 'Available For Me'],
+                ['value' => 'mine', 'label' => 'Assigned To Me'],
+                ['value' => 'unassigned', 'label' => 'Unassigned'],
+            ],
             'urls' => [
                 'index' => route('superadmin.support.tenants.index'),
             ],
@@ -90,12 +119,34 @@ class SupportController extends Controller
     {
         $this->abortIfNotTenantSupport($ticket);
 
+        if (!$ticket->assigned_to_user_id) {
+            $ticket->update([
+                'assigned_to_user_id' => request()->user()->id,
+            ]);
+            $ticket->refresh();
+        }
+
         $ticket->load([
             'tenant:id,name,slug,email',
             'user:id,name,email',
+            'assignedTo:id,name,email',
             'messages' => fn ($q) => $q->orderBy('created_at'),
             'messages.user:id,name,email,role',
         ]);
+
+        $agents = User::withoutGlobalScope('tenant')
+            ->where('role', UserRole::SUPER_ADMIN)
+            ->whereNull('tenant_id')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name', 'email'])
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+            ])
+            ->values()
+            ->all();
 
         return Inertia::render('SuperAdmin/Support/Show', [
             'ticket' => [
@@ -115,6 +166,11 @@ class SupportController extends Controller
                     'name' => $ticket->user->name,
                     'email' => $ticket->user->email,
                 ] : null,
+                'assigned_to' => $ticket->assignedTo ? [
+                    'id' => $ticket->assignedTo->id,
+                    'name' => $ticket->assignedTo->name,
+                    'email' => $ticket->assignedTo->email,
+                ] : null,
                 'messages' => $ticket->messages->map(fn ($message) => [
                     'id' => $message->id,
                     'message' => $message->message,
@@ -124,10 +180,12 @@ class SupportController extends Controller
                     'created_at' => $message->created_at,
                 ])->values(),
             ],
+            'agents' => $agents,
             'urls' => [
                 'index' => route('superadmin.support.tenants.index'),
                 'reply' => route('superadmin.support.tenants.reply', ['ticket' => $ticket->id]),
                 'close' => route('superadmin.support.tenants.close', ['ticket' => $ticket->id]),
+                'assign' => route('superadmin.support.tenants.assign', ['ticket' => $ticket->id]),
             ],
         ]);
     }
@@ -139,6 +197,10 @@ class SupportController extends Controller
         $validated = $request->validate([
             'message' => ['required', 'string', 'min:2'],
         ]);
+
+        if (!$ticket->assigned_to_user_id) {
+            $ticket->update(['assigned_to_user_id' => $request->user()->id]);
+        }
 
         $ticket->messages()->create([
             'tenant_id' => $ticket->tenant_id,
@@ -154,6 +216,34 @@ class SupportController extends Controller
         return back()->with('success', 'Reply sent.');
     }
 
+    public function assign(Request $request, Ticket $ticket): RedirectResponse
+    {
+        $this->abortIfNotTenantSupport($ticket);
+
+        $validated = $request->validate([
+            'assigned_to_user_id' => ['nullable', 'integer'],
+        ]);
+
+        $assigneeId = $validated['assigned_to_user_id'] ?? null;
+
+        if ($assigneeId) {
+            $exists = User::withoutGlobalScope('tenant')
+                ->where('id', $assigneeId)
+                ->where('role', UserRole::SUPER_ADMIN)
+                ->whereNull('tenant_id')
+                ->where('is_active', true)
+                ->exists();
+
+            abort_unless($exists, 422);
+        }
+
+        $ticket->update([
+            'assigned_to_user_id' => $assigneeId,
+        ]);
+
+        return back()->with('success', $assigneeId ? 'Ticket assigned successfully.' : 'Ticket unassigned successfully.');
+    }
+
     public function close(Ticket $ticket): RedirectResponse
     {
         $this->abortIfNotTenantSupport($ticket);
@@ -166,6 +256,10 @@ class SupportController extends Controller
     private function abortIfNotTenantSupport(Ticket $ticket): void
     {
         abort_unless($ticket->channel === 'tenant', 404);
+
+        $assignedToUserId = $ticket->assigned_to_user_id;
+        if ($assignedToUserId && auth()->id() !== $assignedToUserId) {
+            abort(403);
+        }
     }
 }
-

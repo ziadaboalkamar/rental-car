@@ -3,6 +3,7 @@ import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import SuperAdminLayout from '@/layouts/SuperAdminLayout.vue';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 const props = defineProps<{
     ticket: {
@@ -13,6 +14,7 @@ const props = defineProps<{
         created_at: string;
         tenant: { id: number; name: string; slug: string; email: string | null } | null;
         requester: { id: number; name: string; email: string } | null;
+        assigned_to: { id: number; name: string; email: string } | null;
         messages: Array<{
             id: number;
             message: string;
@@ -22,8 +24,10 @@ const props = defineProps<{
             created_at: string;
         }>;
     };
+    agents: Array<{ id: number; name: string; email: string }>;
     urls: {
         index: string;
+        assign: string;
         reply: string;
         close: string;
     };
@@ -36,10 +40,31 @@ const form = useForm({
     message: '',
 });
 
+const assignmentForm = useForm({
+    assigned_to_user_id: props.ticket.assigned_to?.id ? String(props.ticket.assigned_to.id) : '',
+});
+
+const isAssignedToCurrentUser = computed(() => Number(props.ticket.assigned_to?.id ?? 0) === currentUserId);
+const assignmentStatusText = computed(() => {
+    if (!props.ticket.assigned_to) {
+        return 'This ticket is currently unassigned and available for any super admin employee.';
+    }
+
+    return isAssignedToCurrentUser.value
+        ? 'This ticket is assigned to you.'
+        : `This ticket is assigned to ${props.ticket.assigned_to.name}.`;
+});
+
 function submitReply() {
     form.post(props.urls.reply, {
         preserveScroll: true,
         onSuccess: () => form.reset(),
+    });
+}
+
+function saveAssignment() {
+    assignmentForm.post(props.urls.assign, {
+        preserveScroll: true,
     });
 }
 
@@ -74,6 +99,9 @@ function isMine(message: { user_id: number | null; is_superadmin: boolean }): bo
                     <p class="text-sm">
                         <span class="font-medium">Requester:</span> {{ ticket.requester?.name || '-' }} ({{ ticket.requester?.email || '-' }})
                     </p>
+                    <p class="text-sm">
+                        <span class="font-medium">Assigned To:</span> {{ ticket.assigned_to?.name || 'Unassigned' }}
+                    </p>
                 </div>
                 <div class="flex items-center gap-2">
                     <Link :href="urls.index">
@@ -82,6 +110,32 @@ function isMine(message: { user_id: number | null; is_superadmin: boolean }): bo
                     <Button v-if="ticket.status !== 'closed'" variant="destructive" @click="closeTicket">Close</Button>
                 </div>
             </div>
+
+            <section class="rounded-lg border bg-card p-5">
+                <div class="mb-4">
+                    <h2 class="text-base font-semibold">Assignment</h2>
+                    <p class="text-sm text-muted-foreground">{{ assignmentStatusText }}</p>
+                </div>
+                <form class="flex flex-wrap items-end gap-3" @submit.prevent="saveAssignment">
+                    <div class="min-w-[280px] flex-1 space-y-2">
+                        <label for="assigned-to-user" class="text-sm font-medium">Assigned employee</label>
+                        <select
+                            id="assigned-to-user"
+                            v-model="assignmentForm.assigned_to_user_id"
+                            class="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        >
+                            <option value="">Unassigned</option>
+                            <option v-for="agent in agents" :key="agent.id" :value="String(agent.id)">
+                                {{ agent.name }} ({{ agent.email }})
+                            </option>
+                        </select>
+                        <InputError :message="assignmentForm.errors.assigned_to_user_id" />
+                    </div>
+                    <Button type="submit" :disabled="assignmentForm.processing">
+                        {{ assignmentForm.processing ? 'Saving...' : 'Save Assignment' }}
+                    </Button>
+                </form>
+            </section>
 
             <section class="space-y-4 rounded-lg border bg-card p-5">
                 <div
@@ -124,4 +178,3 @@ function isMine(message: { user_id: number | null; is_superadmin: boolean }): bo
         </main>
     </SuperAdminLayout>
 </template>
-
