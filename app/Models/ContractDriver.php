@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Facades\Storage;
 
 class ContractDriver extends Model
 {
@@ -22,12 +23,16 @@ class ContractDriver extends Model
         'full_name_ar',
         'phone',
         'nationality',
+        'place_of_issue',
         'date_of_birth',
         'identity_number',
         'residency_number',
         'license_number',
         'identity_expiry_date',
         'license_expiry_date',
+        'customer_photo_path',
+        'customer_photo_name',
+        'customer_photo_mime_type',
         'extraction_status',
         'extracted_data',
         'raw_output',
@@ -47,6 +52,16 @@ class ContractDriver extends Model
             'confidence' => 'decimal:4',
             'ai_reviewed' => 'boolean',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::deleting(function (ContractDriver $driver) {
+            $path = ltrim((string) preg_replace('/^storage\//', '', (string) $driver->customer_photo_path), '/');
+            if ($path !== '' && Storage::disk(config('vilt-filepond.storage_disk'))->exists($path)) {
+                Storage::disk(config('vilt-filepond.storage_disk'))->delete($path);
+            }
+        });
     }
 
     public function contract(): BelongsTo

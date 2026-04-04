@@ -1,0 +1,72 @@
+{
+  "OM": [
+    { "en": "Muscat", "ar": "مسقط" },
+    { "en": "Seeb", "ar": "السيب" },
+    { "en": "Salalah", "ar": "صلالة" },
+    { "en": "Sohar", "ar": "صحار" },
+    { "en": "Nizwa", "ar": "نزوى" },
+    { "en": "Sur", "ar": "صور" },
+    { "en": "Barka", "ar": "بركاء" },
+    { "en": "Rustaq", "ar": "الرستاق" }
+  ],
+  "AE": [
+    { "en": "Dubai", "ar": "دبي" },
+    { "en": "Abu Dhabi", "ar": "أبوظبي" },
+    { "en": "Sharjah", "ar": "الشارقة" },
+    { "en": "Ajman", "ar": "عجمان" },
+    { "en": "Ras Al Khaimah", "ar": "رأس الخيمة" },
+    { "en": "Fujairah", "ar": "الفجيرة" },
+    { "en": "Umm Al Quwain", "ar": "أم القيوين" },
+    { "en": "Al Ain", "ar": "العين" }
+  ],
+  "SA": [
+    { "en": "Riyadh", "ar": "الرياض" },
+    { "en": "Jeddah", "ar": "جدة" },
+    { "en": "Mecca", "ar": "مكة" },
+    { "en": "Medina", "ar": "المدينة" },
+    { "en": "Dammam", "ar": "الدمام" },
+    { "en": "Khobar", "ar": "الخبر" },
+    { "en": "Taif", "ar": "الطائف" },
+    { "en": "Abha", "ar": "أبها" }
+  ],
+  "QA": [
+    { "en": "Doha", "ar": "الدوحة" },
+    { "en": "Al Rayyan", "ar": "الريان" },
+    { "en": "Al Wakrah", "ar": "الوكرة" },
+    { "en": "Lusail", "ar": "لوسيل" },
+    { "en": "Umm Salal", "ar": "أم صلال" },
+    { "en": "Al Khor", "ar": "الخور" }
+  ],
+  "BH": [
+    { "en": "Manama", "ar": "المنامة" },
+    { "en": "Muharraq", "ar": "المحرق" },
+    { "en": "Riffa", "ar": "الرفاع" },
+    { "en": "Hamad Town", "ar": "مدينة حمد" },
+    { "en": "Isa Town", "ar": "مدينة عيسى" }
+  ],
+  "KW": [
+    { "en": "Kuwait City", "ar": "مدينة الكويت" },
+    { "en": "Al Ahmadi", "ar": "الأحمدي" },
+    { "en": "Hawally", "ar": "حولي" },
+    { "en": "Farwaniya", "ar": "الفروانية" },
+    { "en": "Jahra", "ar": "الجهراء" },
+    { "en": "Salmiya", "ar": "السالمية" }
+  ],
+  "JO": [
+    { "en": "Amman", "ar": "عمان" },
+    { "en": "Zarqa", "ar": "الزرقاء" },
+    { "en": "Irbid", "ar": "إربد" },
+    { "en": "Aqaba", "ar": "العقبة" },
+    { "en": "Salt", "ar": "السلط" },
+    { "en": "Madaba", "ar": "مادبا" }
+  ],
+  "EG": [
+    { "en": "Cairo", "ar": "القاهرة" },
+    { "en": "Giza", "ar": "الجيزة" },
+    { "en": "Alexandria", "ar": "الإسكندرية" },
+    { "en": "Mansoura", "ar": "المنصورة" },
+    { "en": "Tanta", "ar": "طنطا" },
+    { "en": "Hurghada", "ar": "الغردقة" },
+    { "en": "Sharm El Sheikh", "ar": "شرم الشيخ" }
+  ]
+}

@@ -211,6 +211,7 @@ class OpenAiClientDocumentExtractor
         ];
 
         $documentLabel = match ($documentType) {
+            'passport' => 'passport',
             'driver_license' => 'driver license',
             'residency_card' => 'residency card',
             default => 'identity card',
@@ -336,4 +337,7 @@ class OpenAiClientDocumentExtractor
         return $text === '' ? null : $text;
     }
 }
+
+
+
 

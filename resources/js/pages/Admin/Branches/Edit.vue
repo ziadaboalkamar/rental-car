@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import InputError from '@/components/InputError.vue';
+import FileUpload from '@/components/ViltFilePond/FileUpload.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AdminLayout from '@/layouts/AdminLayout.vue';
 import { index, store, update } from '@/routes/admin/branches';
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { City } from 'country-state-city';
+import { computed, ref, watch } from 'vue';
 import { useTrans } from '@/composables/useTrans';
 
 const props = defineProps<{
     branch: any | null;
+    showroomFiles?: Array<{ id: number; url: string }>;
+    countries: Array<{ value: string; label: string }>;
 }>();
 
 const { t } = useTrans();
@@ -22,10 +26,89 @@ const isEdit = computed(() => !!props.branch);
 // Initialize form with default values
 const form = useForm({
     name: props.branch?.name ?? '',
-    address: props.branch?.address ?? '',
-    phone: props.branch?.phone ?? '',
+    country: props.branch?.country ?? '',
+    city: props.branch?.city ?? '',
+    street_name: props.branch?.street_name ?? '',
+    street_number: props.branch?.street_number ?? '',
+    building_number: props.branch?.building_number ?? '',
+    office_number: props.branch?.office_number ?? '',
+    post_code: props.branch?.post_code ?? '',
+    google_map_url: props.branch?.google_map_url ?? '',
+    phone_1: props.branch?.phone_1 ?? '',
+    phone_2: props.branch?.phone_2 ?? '',
+    whatsapp: props.branch?.whatsapp ?? '',
     email: props.branch?.email ?? '',
+    showroom_temp_folders: [] as string[],
+    showroom_removed_files: [] as number[],
 });
+
+const availableCities = computed(() => {
+    const normalizedCountry = String(form.country || '').trim().toUpperCase();
+
+    if (!normalizedCountry) {
+        return [] as Array<{ value: string; label: string }>;
+    }
+
+    const uniqueCities = new Map<string, { value: string; label: string }>();
+
+    for (const city of City.getCitiesOfCountry(normalizedCountry) ?? []) {
+        const name = String(city.name || '').trim();
+
+        if (!name) {
+            continue;
+        }
+
+        const key = name.toLocaleLowerCase();
+
+        if (!uniqueCities.has(key)) {
+            uniqueCities.set(key, {
+                value: name,
+                label: name,
+            });
+        }
+    }
+
+    const options = Array.from(uniqueCities.values()).sort((left, right) =>
+        left.label.localeCompare(right.label, undefined, { sensitivity: 'base' }),
+    );
+
+    if (form.city && !options.some((option) => option.value === form.city)) {
+        return [...options, { value: form.city, label: form.city }];
+    }
+
+    return options;
+});
+
+const hasCityOptions = computed(() => availableCities.value.length > 0);
+
+const showroomUploadRef = ref<InstanceType<typeof FileUpload> | null>(null);
+const showroomTempFolders = ref<string[]>([]);
+const showroomRemovedFiles = ref<number[]>([]);
+
+watch(
+    showroomTempFolders,
+    (value) => {
+        form.showroom_temp_folders = [...value];
+    },
+    { deep: true },
+);
+
+watch(
+    () => form.country,
+    () => {
+        const options = availableCities.value;
+        if (form.city && !options.some((option) => option.value === form.city)) {
+            form.city = '';
+        }
+    },
+);
+
+function handleShowroomFileRemoved(data: { type: string; fileId?: number }) {
+    if (data.type === 'existing' && data.fileId !== undefined) {
+        showroomRemovedFiles.value.push(data.fileId);
+        form.showroom_removed_files = [...showroomRemovedFiles.value];
+    }
+}
 
 function submit() {
     if (!subdomain.value) return;
@@ -36,6 +119,10 @@ function submit() {
         form.post(store(subdomain.value).url, {
             onSuccess: () => {
                 form.reset();
+                showroomTempFolders.value = [];
+                form.showroom_temp_folders = [];
+                form.showroom_removed_files = [];
+                showroomUploadRef.value?.resetFiles();
             },
         });
     }
@@ -56,68 +143,141 @@ function submit() {
                 </Link>
             </div>
 
-            <div class="max-w-2xl">
+            <div class="max-w-5xl">
                 <form class="space-y-6" @submit.prevent="submit">
-                    <div class="space-y-4">
+                    <div class="grid gap-4 md:grid-cols-2">
                         <!-- Name -->
                         <div>
-                            <Label for="name">{{ t('dashboard.admin.branches.table.name') }}</Label>
+                            <Label for="name">Branch Name</Label>
                             <Input
                                 id="name"
                                 v-model="form.name"
-                                :placeholder="t('dashboard.admin.branches.table.name')"
+                                placeholder="Main Showroom"
                                 required
                             />
-                            <InputError
-                                :message="form.errors.name"
-                                class="mt-1"
-                            />
+                            <InputError :message="form.errors.name" class="mt-1" />
                         </div>
 
-                        <!-- Address -->
                         <div>
-                            <Label for="address">{{ t('dashboard.admin.branches.table.address') }}</Label>
-                            <Input
-                                id="address"
-                                v-model="form.address"
-                                :placeholder="t('dashboard.admin.branches.table.address')"
-                                required
-                            />
-                            <InputError
-                                :message="form.errors.address"
-                                class="mt-1"
-                            />
+                            <Label for="country">Country</Label>
+                            <select
+                                id="country"
+                                v-model="form.country"
+                                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                            >
+                                <option value="">Select country</option>
+                                <option v-for="country in countries" :key="country.value" :value="country.value">
+                                    {{ country.label }}
+                                </option>
+                            </select>
+                            <InputError :message="form.errors.country" class="mt-1" />
                         </div>
 
-                        <!-- Phone -->
                         <div>
-                            <Label for="phone">{{ t('dashboard.admin.branches.table.phone') }}</Label>
-                            <Input
-                                id="phone"
-                                v-model="form.phone"
-                                :placeholder="t('dashboard.admin.branches.table.phone')"
-                                required
-                            />
-                            <InputError
-                                :message="form.errors.phone"
-                                class="mt-1"
-                            />
+                            <Label for="city">City</Label>
+                            <select
+                                id="city"
+                                v-model="form.city"
+                                class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                                :disabled="!form.country || !hasCityOptions"
+                            >
+                                <option value="">
+                                    {{
+                                        !form.country
+                                            ? 'Select country first'
+                                            : hasCityOptions
+                                              ? 'Select city'
+                                              : 'No cities available for this country'
+                                    }}
+                                </option>
+                                <option v-for="city in availableCities" :key="city.value" :value="city.value">
+                                    {{ city.label }}
+                                </option>
+                            </select>
+                            <InputError :message="form.errors.city" class="mt-1" />
+                            <p v-if="form.country && !hasCityOptions" class="mt-1 text-xs text-muted-foreground">
+                                No city options were found for the selected country in the current dataset.
+                            </p>
                         </div>
 
-                        <!-- Email -->
                         <div>
-                            <Label for="email">{{ t('dashboard.admin.branches.table.email') }}</Label>
+                            <Label for="street_name">Street Name</Label>
                             <Input
-                                id="email"
-                                v-model="form.email"
-                                type="email"
-                                :placeholder="t('dashboard.admin.branches.table.email')"
-                                required
+                                id="street_name"
+                                v-model="form.street_name"
+                                placeholder="Sultan Qaboos Street"
                             />
-                            <InputError
-                                :message="form.errors.email"
-                                class="mt-1"
+                            <InputError :message="form.errors.street_name" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="street_number">Street Number</Label>
+                            <Input id="street_number" v-model="form.street_number" placeholder="12" />
+                            <InputError :message="form.errors.street_number" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="building_number">Building Number</Label>
+                            <Input id="building_number" v-model="form.building_number" placeholder="A-14" />
+                            <InputError :message="form.errors.building_number" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="office_number">Office Number</Label>
+                            <Input id="office_number" v-model="form.office_number" placeholder="Office 204" />
+                            <InputError :message="form.errors.office_number" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="post_code">Post Code</Label>
+                            <Input id="post_code" v-model="form.post_code" placeholder="112" />
+                            <InputError :message="form.errors.post_code" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="google_map_url">Google Map Location URL</Label>
+                            <Input id="google_map_url" v-model="form.google_map_url" placeholder="https://maps.google.com/..." />
+                            <InputError :message="form.errors.google_map_url" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="phone_1">Phone 1</Label>
+                            <Input id="phone_1" v-model="form.phone_1" placeholder="+968 9000 0000" />
+                            <InputError :message="form.errors.phone_1" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="phone_2">Phone 2</Label>
+                            <Input id="phone_2" v-model="form.phone_2" placeholder="+968 9000 0001" />
+                            <InputError :message="form.errors.phone_2" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="whatsapp">WhatsApp</Label>
+                            <Input id="whatsapp" v-model="form.whatsapp" placeholder="+968 9000 0000" />
+                            <InputError :message="form.errors.whatsapp" class="mt-1" />
+                        </div>
+
+                        <div>
+                            <Label for="email">Email</Label>
+                            <Input id="email" v-model="form.email" type="email" placeholder="branch@example.com" />
+                            <InputError :message="form.errors.email" class="mt-1" />
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <Label class="mb-2 block">Car Rental Showroom Image</Label>
+                            <FileUpload
+                                ref="showroomUploadRef"
+                                v-model="showroomTempFolders"
+                                :initial-files="showroomFiles || []"
+                                :allow-multiple="false"
+                                :max-files="1"
+                                collection="showroom"
+                                theme="light"
+                                width="100%"
+                                @file-removed="handleShowroomFileRemoved"
                             />
+                            <InputError :message="form.errors.showroom_temp_folders" class="mt-1" />
                         </div>
                     </div>
 

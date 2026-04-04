@@ -79,6 +79,11 @@ class ContractDriverDocumentExtractor
             $normalized['nationality'] = $nationality;
         }
 
+        $placeOfIssue = $this->nullableString($fields['place_of_issue'] ?? null);
+        if ($placeOfIssue !== null) {
+            $normalized['place_of_issue'] = $placeOfIssue;
+        }
+
         $dateOfBirth = $this->nullableString($fields['date_of_birth'] ?? null);
         if ($dateOfBirth !== null) {
             $normalized['date_of_birth'] = $dateOfBirth;
@@ -95,7 +100,7 @@ class ContractDriverDocumentExtractor
                 $normalized['license_expiry_date'] = $expiryDate;
             }
         } else {
-            if ($documentType === 'id_card' && $documentNumber !== null) {
+            if (in_array($documentType, ['passport', 'id_card'], true) && $documentNumber !== null) {
                 $normalized['identity_number'] = $documentNumber;
             }
 
@@ -118,3 +123,7 @@ class ContractDriverDocumentExtractor
         return $text === '' ? null : $text;
     }
 }
+
+
+
+

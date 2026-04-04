@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Car;
 use App\Models\CarDamageCase;
 use App\Models\Contract;
+use App\Models\ContractArchiveFile;
 use App\Models\ContractDriver;
 use App\Models\ContractDriverDocument;
 use App\Models\Reservation;
@@ -18,6 +19,7 @@ use App\Services\Contracts\ContractAiExtractor;
 use App\Services\Contracts\ContractDriverDocumentExtractor;
 use App\Support\BranchAccess;
 use App\Support\CarDamageCatalog;
+use App\Support\ContractCustomerPhotoExtractor;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -42,7 +44,8 @@ class ContractsController extends Controller
         private BranchAccess $branchAccess,
         private FilePondService $filePondService,
         private ContractAiExtractor $contractAiExtractor,
-        private ContractDriverDocumentExtractor $contractDriverDocumentExtractor
+        private ContractDriverDocumentExtractor $contractDriverDocumentExtractor,
+        private ContractCustomerPhotoExtractor $contractCustomerPhotoExtractor
     ) {
     }
 
@@ -172,6 +175,7 @@ class ContractsController extends Controller
             'primaryDriver' => $reservation ? $this->prefillPrimaryDriverFromReservation($reservation) : $this->emptyDriverPayload('primary'),
             'additionalDrivers' => [],
             'contractArchive' => $this->emptyContractArchivePayload(),
+            'additionalArchive' => [],
             'reservationOptions' => $reservations,
             'reservationFormOptions' => [
                 'clients' => $this->reservationClientOptions($request),
@@ -187,6 +191,7 @@ class ContractsController extends Controller
                 'store' => route('admin.contracts.store', ['subdomain' => $request->route('subdomain')]),
                 'extract' => route('admin.contracts.extract', ['subdomain' => $request->route('subdomain')]),
                 'extractDriver' => route('admin.contracts.drivers.extract', ['subdomain' => $request->route('subdomain')]),
+                'extractCustomerPhoto' => route('admin.contracts.drivers.photo.extract', ['subdomain' => $request->route('subdomain')]),
                 'reservationStore' => route('admin.reservations.store', ['subdomain' => $request->route('subdomain')]),
             ],
         ]);
@@ -217,6 +222,7 @@ class ContractsController extends Controller
             $this->syncFiles($contract, $request, 'start_contract');
             $this->syncFiles($contract, $request, 'end_contract');
             $this->syncContractDrivers($contract, $validated, $reservation);
+            $this->syncAdditionalArchiveFiles($contract, $validated);
 
             return $contract;
         });
@@ -397,6 +403,7 @@ class ContractsController extends Controller
             'files',
             'primaryDriver.documents',
             'additionalDrivers.documents',
+            'archiveFiles.driver',
         ]);
         $reservationOptions = $this->reservationOptions($request);
         $carDamageMap = $this->serializeCarDamageCaseMap(
@@ -444,6 +451,7 @@ class ContractsController extends Controller
             'primaryDriver' => $contract->primaryDriver ? $this->serializeDriver($contract->primaryDriver) : $this->emptyDriverPayload('primary'),
             'additionalDrivers' => $contract->additionalDrivers->map(fn (ContractDriver $driver) => $this->serializeDriver($driver))->values()->all(),
             'contractArchive' => $this->serializeContractArchive($contract),
+            'additionalArchive' => $this->serializeAdditionalArchiveFiles($contract),
             'reservationOptions' => $reservationOptions,
             'reservationFormOptions' => [
                 'clients' => $this->reservationClientOptions($request),
@@ -460,6 +468,7 @@ class ContractsController extends Controller
                 'show' => route('admin.contracts.show', ['subdomain' => $request->route('subdomain'), 'contract' => $contract->id]),
                 'extract' => route('admin.contracts.extract', ['subdomain' => $request->route('subdomain')]),
                 'extractDriver' => route('admin.contracts.drivers.extract', ['subdomain' => $request->route('subdomain')]),
+                'extractCustomerPhoto' => route('admin.contracts.drivers.photo.extract', ['subdomain' => $request->route('subdomain')]),
                 'reservationStore' => route('admin.reservations.store', ['subdomain' => $request->route('subdomain')]),
             ],
         ]);
@@ -508,7 +517,7 @@ class ContractsController extends Controller
         $validated = $request->validate([
             'driver_role' => ['required', Rule::in(['primary', 'additional'])],
             'driver_index' => ['nullable', 'integer', 'min:0'],
-            'document_type' => ['required', Rule::in(['driver_license', 'id_card', 'residency_card'])],
+            'document_type' => ['required', Rule::in(['passport', 'driver_license', 'id_card', 'residency_card'])],
             'temp_folders' => ['required', 'array', 'min:1'],
             'temp_folders.*' => ['string'],
         ]);
@@ -539,6 +548,45 @@ class ContractsController extends Controller
         }
     }
 
+    public function extractDriverCustomerPhoto(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'document_type' => ['required', Rule::in(['passport', 'driver_license', 'id_card', 'residency_card'])],
+            'temp_folders' => ['required', 'array', 'min:1'],
+            'temp_folders.*' => ['string'],
+        ]);
+
+        $tempFile = TempFile::query()->where('folder', (string) $validated['temp_folders'][0])->first();
+        if (! $tempFile) {
+            return response()->json(['message' => 'Uploaded document could not be found.'], 422);
+        }
+
+        try {
+            $result = $this->contractCustomerPhotoExtractor->extractToTempFolder(
+                (string) $tempFile->path,
+                $tempFile->mime_type,
+                (string) $validated['document_type'],
+                config('vilt-filepond.storage_disk')
+            );
+
+            if (! $result) {
+                return response()->json(['message' => 'Could not extract customer photo from the uploaded document.'], 422);
+            }
+
+            return response()->json([
+                'message' => 'Customer photo extracted successfully.',
+                'folder' => $result['folder'],
+                'url' => $result['url'],
+                'filename' => $result['filename'],
+                'mime_type' => $result['mime_type'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => (string) $e->getMessage(),
+            ], 422);
+        }
+    }
+
     public function update(Request $request, Contract $contract): RedirectResponse
     {
         abort_unless($this->canAccessContract($contract, $request->user()), 403);
@@ -547,7 +595,7 @@ class ContractsController extends Controller
             abort(404);
         }
 
-        $validated = $this->validatePayload($request, $tenantId, $contract->id);
+        $validated = $this->validatePayload($request, $tenantId, $contract->id, $contract);
         $reservation = $this->validatedReservation($validated['reservation_id'] ?? null, $request, $contract->id);
 
         DB::transaction(function () use ($request, $validated, $reservation, $contract) {
@@ -563,6 +611,7 @@ class ContractsController extends Controller
             $this->syncFiles($contract, $request, 'start_contract');
             $this->syncFiles($contract, $request, 'end_contract');
             $this->syncContractDrivers($contract, $validated, $reservation);
+            $this->syncAdditionalArchiveFiles($contract, $validated);
         });
 
         return redirect()
@@ -573,7 +622,7 @@ class ContractsController extends Controller
             ->with('success', 'Contract updated successfully.');
     }
 
-    private function validatePayload(Request $request, int $tenantId, ?int $ignoreId = null): array
+    private function validatePayload(Request $request, int $tenantId, ?int $ignoreId = null, ?Contract $contract = null): array
     {
         $uniqueRule = Rule::unique('contracts', 'contract_number')
             ->where(fn ($query) => $query->where('tenant_id', $tenantId));
@@ -612,6 +661,7 @@ class ContractsController extends Controller
             'primary_driver.full_name_ar' => ['nullable', 'string', 'max:255'],
             'primary_driver.phone' => ['nullable', 'string', 'max:100'],
             'primary_driver.nationality' => ['nullable', 'string', 'max:100'],
+            'primary_driver.place_of_issue' => ['nullable', 'string', 'max:255'],
             'primary_driver.date_of_birth' => ['nullable', 'date'],
             'primary_driver.identity_number' => ['nullable', 'string', 'max:255'],
             'primary_driver.residency_number' => ['nullable', 'string', 'max:255'],
@@ -637,6 +687,10 @@ class ContractsController extends Controller
             'primary_driver.documents.*.temp_folders.*' => ['string'],
             'primary_driver.documents.*.removed_file_ids' => ['array'],
             'primary_driver.documents.*.removed_file_ids.*' => ['integer'],
+            'primary_driver.customer_photo_temp_folders' => ['array'],
+            'primary_driver.customer_photo_temp_folders.*' => ['string'],
+            'primary_driver.customer_photo_removed_file_ids' => ['array'],
+            'primary_driver.customer_photo_removed_file_ids.*' => ['integer'],
 
             'additional_drivers' => ['array'],
             'additional_drivers.*.id' => ['nullable', 'integer'],
@@ -646,6 +700,7 @@ class ContractsController extends Controller
             'additional_drivers.*.full_name_ar' => ['nullable', 'string', 'max:255'],
             'additional_drivers.*.phone' => ['nullable', 'string', 'max:100'],
             'additional_drivers.*.nationality' => ['nullable', 'string', 'max:100'],
+            'additional_drivers.*.place_of_issue' => ['nullable', 'string', 'max:255'],
             'additional_drivers.*.date_of_birth' => ['nullable', 'date'],
             'additional_drivers.*.identity_number' => ['nullable', 'string', 'max:255'],
             'additional_drivers.*.residency_number' => ['nullable', 'string', 'max:255'],
@@ -678,6 +733,19 @@ class ContractsController extends Controller
             'contract_archive.removed_file_ids' => ['array'],
             'contract_archive.removed_file_ids.*' => ['integer'],
 
+            'additional_archive' => ['array'],
+            'additional_archive.*.id' => ['nullable', 'integer'],
+            'additional_archive.*.owner_key' => ['nullable', 'string', 'max:100'],
+            'additional_archive.*.document_type' => ['nullable', 'string', 'max:100'],
+            'additional_archive.*.title' => ['nullable', 'string', 'max:255'],
+            'additional_archive.*.notes' => ['nullable', 'string'],
+            'additional_archive.*.temp_folders' => ['array'],
+            'additional_archive.*.temp_folders.*' => ['string'],
+            'additional_archive.*.removed_file_ids' => ['array'],
+            'additional_archive.*.removed_file_ids.*' => ['integer'],
+            'additional_archive_removed_ids' => ['array'],
+            'additional_archive_removed_ids.*' => ['integer'],
+
             'start_contract_temp_folders' => ['array'],
             'start_contract_temp_folders.*' => ['string'],
             'start_contract_removed_files' => ['array'],
@@ -690,6 +758,7 @@ class ContractsController extends Controller
 
         $validated = $validator->validate();
         $this->ensureExtractedDriversAreReviewed($validated);
+        $this->ensureAdditionalArchiveDoesNotReuseDriverDocuments($validated, $contract);
 
         return $validated;
     }
@@ -1046,6 +1115,7 @@ class ContractsController extends Controller
             'full_name_ar' => $payload['full_name_ar'] ?? null,
             'phone' => $payload['phone'] ?? $validated['renter_phone'] ?? null,
             'nationality' => $payload['nationality'] ?? null,
+            'place_of_issue' => $payload['place_of_issue'] ?? null,
             'date_of_birth' => $payload['date_of_birth'] ?? null,
             'identity_number' => $payload['identity_number'] ?? $validated['renter_id_number'] ?? null,
             'residency_number' => $payload['residency_number'] ?? null,
@@ -1062,6 +1132,8 @@ class ContractsController extends Controller
             'temp_folders' => is_array($payload['temp_folders'] ?? null) ? $payload['temp_folders'] : [],
             'removed_file_ids' => is_array($payload['removed_file_ids'] ?? null) ? $payload['removed_file_ids'] : [],
             'documents' => is_array($payload['documents'] ?? null) ? $payload['documents'] : [],
+            'customer_photo_temp_folders' => is_array($payload['customer_photo_temp_folders'] ?? null) ? $payload['customer_photo_temp_folders'] : [],
+            'customer_photo_removed_file_ids' => is_array($payload['customer_photo_removed_file_ids'] ?? null) ? $payload['customer_photo_removed_file_ids'] : [],
         ]);
     }
 
@@ -1077,6 +1149,7 @@ class ContractsController extends Controller
         $this->fillDriverModel($primaryDriver, $primaryPayload, 'primary', 0);
         $primaryDriver->save();
         $this->syncDriverDocuments($primaryDriver, $primaryPayload);
+        $this->syncDriverCustomerPhoto($primaryDriver, $primaryPayload);
 
         $keepDriverIds = [$primaryDriver->id];
         $additionalDrivers = is_array($validated['additional_drivers'] ?? null) ? $validated['additional_drivers'] : [];
@@ -1135,6 +1208,7 @@ class ContractsController extends Controller
         $driver->full_name_ar = $this->nullableString($payload['full_name_ar'] ?? null);
         $driver->phone = $this->nullableString($payload['phone'] ?? null);
         $driver->nationality = $this->nullableString($payload['nationality'] ?? null);
+        $driver->place_of_issue = $this->nullableString($payload['place_of_issue'] ?? null);
         $driver->date_of_birth = $payload['date_of_birth'] ?? null;
         $driver->identity_number = $this->nullableString($payload['identity_number'] ?? null);
         $driver->residency_number = $this->nullableString($payload['residency_number'] ?? null);
@@ -1172,6 +1246,61 @@ class ContractsController extends Controller
                 );
             }
         }
+    }
+
+    private function syncDriverCustomerPhoto(ContractDriver $driver, array $payload): void
+    {
+        $removedFileIds = array_map('intval', is_array($payload['customer_photo_removed_file_ids'] ?? null) ? $payload['customer_photo_removed_file_ids'] : []);
+        if ($removedFileIds !== []) {
+            $this->deleteDriverCustomerPhoto($driver);
+        }
+
+        $tempFolders = array_values(array_filter(is_array($payload['customer_photo_temp_folders'] ?? null) ? $payload['customer_photo_temp_folders'] : []));
+        if ($tempFolders === []) {
+            return;
+        }
+
+        $this->replaceDriverCustomerPhotoFromTemp($driver, (string) $tempFolders[0]);
+    }
+
+    private function replaceDriverCustomerPhotoFromTemp(ContractDriver $driver, string $folder): void
+    {
+        $tempFile = TempFile::query()->where('folder', $folder)->first();
+        if (! $tempFile) {
+            return;
+        }
+
+        $disk = Storage::disk(config('vilt-filepond.storage_disk'));
+        $extension = pathinfo((string) $tempFile->filename, PATHINFO_EXTENSION);
+        $filename = 'contract_driver_photo_'.$driver->id.'_'.Str::uuid().($extension !== '' ? '.'.$extension : '');
+        $newPath = config('vilt-filepond.files_path').'/contractdriverphoto/'.$driver->id.'/'.$filename;
+
+        $this->deleteDriverCustomerPhoto($driver);
+        $disk->move($tempFile->path, $newPath);
+
+        $driver->customer_photo_path = 'storage/'.$newPath;
+        $driver->customer_photo_name = $tempFile->original_name ?: $tempFile->filename;
+        $driver->customer_photo_mime_type = $tempFile->mime_type;
+        $driver->save();
+
+        $disk->deleteDirectory(config('vilt-filepond.temp_path').'/'.$tempFile->folder);
+        $tempFile->delete();
+    }
+
+    private function deleteDriverCustomerPhoto(ContractDriver $driver): void
+    {
+        $existingPath = ltrim((string) preg_replace('/^storage\//', '', (string) $driver->customer_photo_path), '/');
+        if ($existingPath !== '') {
+            $disk = Storage::disk(config('vilt-filepond.storage_disk'));
+            if ($disk->exists($existingPath)) {
+                $disk->delete($existingPath);
+            }
+        }
+
+        $driver->customer_photo_path = null;
+        $driver->customer_photo_name = null;
+        $driver->customer_photo_mime_type = null;
+        $driver->save();
     }
 
     private function normalizedDriverDocumentsInput(array $payload): array
@@ -1254,6 +1383,7 @@ class ContractsController extends Controller
             'full_name_ar',
             'phone',
             'nationality',
+            'place_of_issue',
             'date_of_birth',
             'identity_number',
             'residency_number',
@@ -1317,6 +1447,7 @@ class ContractsController extends Controller
             'full_name_ar' => '',
             'phone' => '',
             'nationality' => '',
+            'place_of_issue' => '',
             'date_of_birth' => '',
             'identity_number' => '',
             'residency_number' => '',
@@ -1333,6 +1464,10 @@ class ContractsController extends Controller
             'temp_folders' => [],
             'removed_file_ids' => [],
             'documents' => [],
+            'customer_photo' => null,
+            'customer_photo_files' => [],
+            'customer_photo_temp_folders' => [],
+            'customer_photo_removed_file_ids' => [],
         ];
     }
 
@@ -1345,7 +1480,249 @@ class ContractsController extends Controller
             'branch_id' => null,
         ];
     }
+    private function ensureAdditionalArchiveDoesNotReuseDriverDocuments(array $validated, ?Contract $contract = null): void
+    {
+        $driverHashes = $this->driverDocumentHashes($validated, $contract);
+        if ($driverHashes === []) {
+            return;
+        }
 
+        $messages = [];
+        foreach (is_array($validated['additional_archive'] ?? null) ? $validated['additional_archive'] : [] as $index => $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            foreach (array_values(array_filter(is_array($item['temp_folders'] ?? null) ? $item['temp_folders'] : [])) as $folder) {
+                $hash = $this->hashTempFolderFile((string) $folder);
+                if ($hash !== null && in_array($hash, $driverHashes, true)) {
+                    $messages["additional_archive.$index.temp_folders"] = 'Files already used in the main customer document section cannot be added again to Additional Archive.';
+                    break;
+                }
+            }
+        }
+
+        if ($messages !== []) {
+            throw ValidationException::withMessages($messages);
+        }
+    }
+
+    private function driverDocumentHashes(array $validated, ?Contract $contract = null): array
+    {
+        $hashes = [];
+
+        $drivers = [];
+        if (is_array($validated['primary_driver'] ?? null)) {
+            $drivers[] = $validated['primary_driver'];
+        }
+
+        foreach (is_array($validated['additional_drivers'] ?? null) ? $validated['additional_drivers'] : [] as $driver) {
+            if (is_array($driver)) {
+                $drivers[] = $driver;
+            }
+        }
+
+        foreach ($drivers as $driverPayload) {
+            foreach ($this->normalizedDriverDocumentsInput($driverPayload) as $documentInput) {
+                foreach (array_values(array_filter(is_array($documentInput['temp_folders'] ?? null) ? $documentInput['temp_folders'] : [])) as $folder) {
+                    $hash = $this->hashTempFolderFile((string) $folder);
+                    if ($hash !== null && $hash !== '') {
+                        $hashes[$hash] = true;
+                    }
+                }
+            }
+        }
+
+        if ($contract) {
+            $contract->loadMissing('drivers.documents');
+            foreach ($contract->drivers as $driver) {
+                foreach ($driver->documents as $document) {
+                    $hash = $this->hashStoredFilePath($document->file_path);
+                    if ($hash !== null && $hash !== '') {
+                        $hashes[$hash] = true;
+                    }
+                }
+            }
+        }
+
+        return array_keys($hashes);
+    }
+
+    private function hashTempFolderFile(string $folder): ?string
+    {
+        $tempFile = TempFile::query()->where('folder', $folder)->first();
+        if (!$tempFile) {
+            return null;
+        }
+
+        return $this->hashDiskPath((string) $tempFile->path, false);
+    }
+
+    private function hashStoredFilePath(?string $path): ?string
+    {
+        return $this->hashDiskPath((string) ($path ?? ''), true);
+    }
+
+    private function hashDiskPath(string $path, bool $stripStoragePrefix): ?string
+    {
+        $normalized = ltrim($path, '/');
+        if ($stripStoragePrefix && str_starts_with($normalized, 'storage/')) {
+            $normalized = substr($normalized, strlen('storage/'));
+        }
+
+        if ($normalized === '') {
+            return null;
+        }
+
+        try {
+            $absolutePath = Storage::disk(config('vilt-filepond.storage_disk'))->path($normalized);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if (!is_file($absolutePath)) {
+            return null;
+        }
+
+        $hash = sha1_file($absolutePath);
+
+        return is_string($hash) && $hash !== '' ? $hash : null;
+    }
+
+    private function syncAdditionalArchiveFiles(Contract $contract, array $validated): void
+    {
+        $removedIds = array_map('intval', is_array($validated['additional_archive_removed_ids'] ?? null) ? $validated['additional_archive_removed_ids'] : []);
+        if ($removedIds !== []) {
+            $contract->archiveFiles()->whereIn('id', $removedIds)->get()->each->delete();
+        }
+
+        $rows = is_array($validated['additional_archive'] ?? null) ? $validated['additional_archive'] : [];
+        if ($rows === []) {
+            return;
+        }
+
+        $contract->loadMissing('drivers', 'archiveFiles');
+        $driverMap = [];
+        $primaryDriver = $contract->drivers->firstWhere('role', 'primary');
+        if ($primaryDriver) {
+            $driverMap['primary'] = $primaryDriver;
+        }
+
+        foreach ($contract->drivers->where('role', 'additional') as $driver) {
+            $driverMap['additional_'.(int) $driver->sort_order] = $driver;
+        }
+
+        foreach ($rows as $payload) {
+            if (!is_array($payload)) {
+                continue;
+            }
+
+            $archiveId = isset($payload['id']) ? (int) $payload['id'] : 0;
+            $archiveFile = $archiveId > 0
+                ? $contract->archiveFiles()->whereKey($archiveId)->first()
+                : null;
+
+            $removedFileIds = array_map('intval', is_array($payload['removed_file_ids'] ?? null) ? $payload['removed_file_ids'] : []);
+            if ($archiveFile && in_array($archiveFile->id, $removedFileIds, true)) {
+                $archiveFile->delete();
+                $archiveFile = null;
+            }
+
+            $tempFolders = array_values(array_filter(is_array($payload['temp_folders'] ?? null) ? $payload['temp_folders'] : []));
+            if (!$archiveFile && $tempFolders === []) {
+                continue;
+            }
+
+            if (!$archiveFile) {
+                $archiveFile = new ContractArchiveFile([
+                    'tenant_id' => $contract->tenant_id,
+                    'contract_id' => $contract->id,
+                ]);
+            }
+
+            $ownerKey = $this->nullableString($payload['owner_key'] ?? null);
+            $archiveFile->contract_driver_id = $ownerKey !== null && array_key_exists($ownerKey, $driverMap)
+                ? $driverMap[$ownerKey]->id
+                : null;
+            $archiveFile->document_type = $this->nullableString($payload['document_type'] ?? null);
+            $archiveFile->title = $this->nullableString($payload['title'] ?? null);
+            $archiveFile->notes = $this->nullableString($payload['notes'] ?? null);
+
+            if ($tempFolders !== []) {
+                $this->replaceArchiveFileFromTemp($archiveFile, (string) $tempFolders[0]);
+            }
+
+            if ($this->nullableString($archiveFile->file_path) === null) {
+                continue;
+            }
+
+            $archiveFile->save();
+        }
+    }
+
+    private function replaceArchiveFileFromTemp(ContractArchiveFile $archiveFile, string $folder): void
+    {
+        $tempFile = TempFile::query()->where('folder', $folder)->first();
+        if (!$tempFile) {
+            return;
+        }
+
+        $disk = Storage::disk(config('vilt-filepond.storage_disk'));
+        $extension = pathinfo((string) $tempFile->filename, PATHINFO_EXTENSION);
+        $filename = 'contract_archive_'.($archiveFile->contract_id ?: 'new').'_'.Str::uuid().($extension !== '' ? '.'.$extension : '');
+        $newPath = config('vilt-filepond.files_path').'/contractarchive/'.($archiveFile->contract_id ?: 'new').'/'.$filename;
+
+        $existingPath = ltrim((string) preg_replace('/^storage\//', '', (string) $archiveFile->file_path), '/');
+        if ($existingPath !== '' && $disk->exists($existingPath)) {
+            $disk->delete($existingPath);
+        }
+
+        $disk->move($tempFile->path, $newPath);
+
+        $archiveFile->file_path = 'storage/'.$newPath;
+        $archiveFile->file_name = $tempFile->original_name;
+        $archiveFile->mime_type = $tempFile->mime_type;
+
+        $disk->deleteDirectory(config('vilt-filepond.temp_path').'/'.$tempFile->folder);
+        $tempFile->delete();
+    }
+
+    private function serializeAdditionalArchiveFiles(Contract $contract): array
+    {
+        $files = $contract->relationLoaded('archiveFiles')
+            ? $contract->archiveFiles
+            : $contract->archiveFiles()->with('driver')->get();
+
+        return $files
+            ->sortBy('id')
+            ->values()
+            ->map(fn (ContractArchiveFile $file) => [
+                'id' => $file->id,
+                'owner_key' => $this->serializeArchiveOwnerKey($file),
+                'document_type' => $file->document_type,
+                'title' => $file->title,
+                'notes' => $file->notes,
+                'existing_files' => $file->file_path
+                    ? [[
+                        'id' => $file->id,
+                        'url' => $this->storageUrl($file->file_path),
+                    ]]
+                    : [],
+            ])
+            ->all();
+    }
+
+    private function serializeArchiveOwnerKey(ContractArchiveFile $file): string
+    {
+        $driver = $file->relationLoaded('driver') ? $file->driver : $file->driver()->first();
+        if (!$driver) {
+            return '';
+        }
+
+        return $driver->role === 'primary'
+            ? 'primary'
+            : 'additional_'.(int) $driver->sort_order;
+    }
     private function emptyContractArchivePayload(): array
     {
         return [
@@ -1385,6 +1762,7 @@ class ContractsController extends Controller
             'full_name_ar' => $driver->full_name_ar,
             'phone' => $driver->phone,
             'nationality' => $driver->nationality,
+            'place_of_issue' => $driver->place_of_issue,
             'date_of_birth' => optional($driver->date_of_birth)->toDateString(),
             'identity_number' => $driver->identity_number,
             'residency_number' => $driver->residency_number,
@@ -1401,6 +1779,17 @@ class ContractsController extends Controller
             'temp_folders' => [],
             'removed_file_ids' => [],
             'documents' => $driver->documents->map(fn (ContractDriverDocument $document) => $this->serializeDriverDocument($document))->values()->all(),
+            'customer_photo' => $driver->customer_photo_path ? [
+                'url' => $this->storageUrl($driver->customer_photo_path),
+                'name' => $driver->customer_photo_name,
+                'mime_type' => $driver->customer_photo_mime_type,
+            ] : null,
+            'customer_photo_files' => $driver->customer_photo_path ? [[
+                'id' => $driver->id,
+                'url' => $this->storageUrl($driver->customer_photo_path),
+            ]] : [],
+            'customer_photo_temp_folders' => [],
+            'customer_photo_removed_file_ids' => [],
         ];
     }
 
@@ -1693,4 +2082,15 @@ class ContractsController extends Controller
         ];
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 

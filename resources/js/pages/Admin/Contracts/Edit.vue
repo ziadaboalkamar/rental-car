@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
@@ -31,15 +31,28 @@ const props = defineProps<{
   } | null;
   startContractFiles: Array<{ id?: number | null; url?: string | null }>;
   endContractFiles: Array<{ id?: number | null; url?: string | null }>;
-  actions: { index: string; store?: string; update?: string; show?: string; extract?: string; extractDriver?: string; reservationStore?: string };
+  additionalArchive?: Array<Record<string, any>>;
+  actions: { index: string; store?: string; update?: string; show?: string; extract?: string; extractDriver?: string; extractCustomerPhoto?: string; reservationStore?: string };
 }>();
 
-const documentTypeOptions = [
-  { value: '', label: 'Select document type' },
-  { value: 'driver_license', label: 'Driver License' },
-  { value: 'id_card', label: 'ID Card' },
-  { value: 'residency_card', label: 'Residency Card' },
-];
+const documentTypeOptions = computed(() => [
+  { value: '', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0627\u062e\u062a\u0631 \u0646\u0648\u0639 \u0627\u0644\u0645\u0633\u062a\u0646\u062f' : 'Select document type' },
+  { value: 'passport', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u062c\u0648\u0627\u0632 \u0633\u0641\u0631 (\u0633\u0627\u0626\u062d)' : 'Passport (Tourist)' },
+  { value: 'driver_license', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0631\u062e\u0635\u0629 \u0642\u064a\u0627\u062f\u0629' : 'Driver License' },
+  { value: 'id_card', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0628\u0637\u0627\u0642\u0629 \u0647\u0648\u064a\u0629 (\u0645\u0648\u0627\u0637\u0646)' : 'ID Card (Citizen)' },
+  { value: 'residency_card', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0628\u0637\u0627\u0642\u0629 \u0625\u0642\u0627\u0645\u0629 (\u0645\u0642\u064a\u0645)' : 'Residency Card (Resident)' },
+]);
+
+const additionalArchiveDocumentTypeOptions = computed(() => [
+  { value: '', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0627\u062e\u062a\u0631 \u0646\u0648\u0639 \u0627\u0644\u0645\u0633\u062a\u0646\u062f' : 'Select archive type' },
+  { value: 'passport', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u062c\u0648\u0627\u0632 \u0633\u0641\u0631' : 'Passport' },
+  { value: 'id_card', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0628\u0637\u0627\u0642\u0629 \u0647\u0648\u064a\u0629' : 'ID Card' },
+  { value: 'residency_card', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0628\u0637\u0627\u0642\u0629 \u0625\u0642\u0627\u0645\u0629' : 'Residency Card' },
+  { value: 'driver_license', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0631\u062e\u0635\u0629 \u0642\u064a\u0627\u062f\u0629' : 'Driver License' },
+  { value: 'visa', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u062a\u0623\u0634\u064a\u0631\u0629' : 'Visa' },
+  { value: 'insurance', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u062a\u0623\u0645\u064a\u0646' : 'Insurance' },
+  { value: 'other', label: (usePage<any>().props.locale ?? 'en') === 'ar' ? '\u0623\u062e\u0631\u0649' : 'Other' },
+]);
 
 const reservationStatusOptions = [
   { value: 'pending', label: 'Pending' },
@@ -95,6 +108,7 @@ function buildDriver(driver: any, role: 'primary' | 'additional') {
     full_name_ar: String(payload.full_name_ar || ''),
     phone: String(payload.phone || ''),
     nationality: String(payload.nationality || ''),
+    place_of_issue: String(payload.place_of_issue || ''),
     date_of_birth: String(payload.date_of_birth || ''),
     identity_number: String(payload.identity_number || ''),
     residency_number: String(payload.residency_number || ''),
@@ -109,9 +123,34 @@ function buildDriver(driver: any, role: 'primary' | 'additional') {
     notes: String(payload.notes || ''),
     document_type: type,
     documents: [documentSlot('front', docs, type), documentSlot('back', docs, type)],
+    customer_photo: payload.customer_photo || null,
+    customer_photo_existing_files: Array.isArray(payload.customer_photo_files) ? payload.customer_photo_files : [],
+    customer_photo_temp_folders: Array.isArray(payload.customer_photo_temp_folders) ? payload.customer_photo_temp_folders : [],
+    customer_photo_removed_file_ids: Array.isArray(payload.customer_photo_removed_file_ids) ? payload.customer_photo_removed_file_ids : [],
+    customer_photo_preview_url: String(payload.customer_photo?.url || ''),
     extracting: false,
     extract_error: '',
     extract_success: '',
+    photo_extracting: false,
+    photo_extract_error: '',
+    photo_extract_success: '',
+  };
+}
+
+function buildAdditionalArchiveItem(entry: any = null) {
+  const payload = entry || {};
+
+  return {
+    id: payload.id ?? null,
+    owner_key: String(payload.owner_key || ''),
+    document_type: String(payload.document_type || ''),
+    title: String(payload.title || ''),
+    notes: String(payload.notes || ''),
+    temp_folders: [],
+    removed_file_ids: [],
+    existing_files: Array.isArray(payload.existing_files)
+      ? payload.existing_files
+      : [],
   };
 }
 
@@ -130,6 +169,19 @@ function onDriverFileRemoved(driver: any, index: number, data: { type: string; f
   driver.extract_success = '';
 }
 
+function onDriverCustomerPhotoRemoved(driver: any, data: { type: string; fileId?: number }) {
+  if (data.type !== 'existing' || !data.fileId) {
+    driver.customer_photo_preview_url = '';
+    return;
+  }
+
+  driver.customer_photo_removed_file_ids = [...driver.customer_photo_removed_file_ids, data.fileId];
+  driver.customer_photo_existing_files = (driver.customer_photo_existing_files || []).filter((file: any) => Number(file.id) !== Number(data.fileId));
+  driver.customer_photo_preview_url = '';
+  driver.photo_extract_error = '';
+  driver.photo_extract_success = '';
+}
+
 function addAdditionalDriver() {
   form.additional_drivers.push(buildDriver(null, 'additional'));
 }
@@ -145,6 +197,26 @@ function onArchiveFileRemoved(type: 'start' | 'end', data: { type: string; fileI
     return;
   }
   form.end_contract_removed_files = [...form.end_contract_removed_files, data.fileId];
+}
+
+function addAdditionalArchiveItem() {
+  form.additional_archive.push(buildAdditionalArchiveItem());
+}
+
+function removeAdditionalArchiveItem(index: number) {
+  const item = form.additional_archive[index];
+  if (item?.id) {
+    form.additional_archive_removed_ids = [...form.additional_archive_removed_ids, Number(item.id)];
+  }
+  form.additional_archive.splice(index, 1);
+}
+
+function onAdditionalArchiveFileRemoved(index: number, data: { type: string; fileId?: number }) {
+  if (data.type !== 'existing' || !data.fileId) return;
+  const item = form.additional_archive[index];
+  if (!item) return;
+  item.removed_file_ids = [...item.removed_file_ids, data.fileId];
+  item.existing_files = (item.existing_files || []).filter((file: any) => Number(file.id) !== Number(data.fileId));
 }
 
 const form = useForm({
@@ -178,6 +250,10 @@ const form = useForm({
     temp_folders: [],
     removed_file_ids: [],
   },
+  additional_archive: Array.isArray(props.additionalArchive)
+    ? props.additionalArchive.map((item) => buildAdditionalArchiveItem(item))
+    : [],
+  additional_archive_removed_ids: [],
   start_contract_temp_folders: [],
   start_contract_removed_files: [],
   end_contract_temp_folders: [],
@@ -218,6 +294,21 @@ const selectedCarDamages = computed(() => {
 const hasLinkedReservation = computed(() => Boolean(selectedReservation.value));
 const reservationClients = computed(() => props.reservationFormOptions?.clients ?? []);
 const reservationCars = computed(() => props.reservationFormOptions?.cars ?? []);
+const additionalArchiveOwnerOptions = computed(() => {
+  const options = [
+    { value: '', label: 'No specific driver' },
+    { value: 'primary', label: form.primary_driver.full_name ? `Primary Driver - ${form.primary_driver.full_name}` : 'Primary Driver' },
+  ];
+
+  form.additional_drivers.forEach((driver: any, index: number) => {
+    options.push({
+      value: `additional_${index}`,
+      label: driver.full_name ? `Additional Driver ${index + 1} - ${driver.full_name}` : `Additional Driver ${index + 1}`,
+    });
+  });
+
+  return options;
+});
 
 function snapshotManualState() {
   manualSnapshot.value = {
@@ -286,6 +377,7 @@ function applyExtractedFields(driver: any, fields: Record<string, any>) {
     'full_name',
     'full_name_ar',
     'nationality',
+    'place_of_issue',
     'date_of_birth',
     'identity_number',
     'residency_number',
@@ -366,6 +458,65 @@ async function extractDriver(driver: any, role: 'primary' | 'additional', index:
     driver.extraction_status = 'failed';
   } finally {
     driver.extracting = false;
+  }
+}
+
+async function extractCustomerPhoto(driver: any) {
+  driver.photo_extract_error = '';
+  driver.photo_extract_success = '';
+
+  if (!props.actions.extractCustomerPhoto) {
+    driver.photo_extract_error = 'Customer photo extraction endpoint is not configured.';
+    return;
+  }
+
+  if (!driver.document_type) {
+    driver.photo_extract_error = 'Select a document type first.';
+    return;
+  }
+
+  const tempFolders = Array.isArray(driver.documents?.[0]?.temp_folders)
+    ? driver.documents[0].temp_folders.filter(Boolean)
+    : [];
+
+  if (tempFolders.length === 0) {
+    driver.photo_extract_error = 'Upload a front or single document image before extracting the customer photo.';
+    return;
+  }
+
+  driver.photo_extracting = true;
+
+  try {
+    const response = await fetch(props.actions.extractCustomerPhoto, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null)?.content || '',
+      },
+      body: JSON.stringify({
+        document_type: driver.document_type,
+        temp_folders: tempFolders,
+      }),
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      driver.photo_extract_error = payload.message || 'Customer photo extraction failed.';
+      return;
+    }
+
+    driver.customer_photo_temp_folders = payload.folder ? [payload.folder] : [];
+    driver.customer_photo_removed_file_ids = [];
+    driver.customer_photo_existing_files = [];
+    driver.customer_photo_preview_url = String(payload.url || '');
+    driver.photo_extract_success = payload.message || 'Customer photo extracted successfully.';
+  } catch (error) {
+    driver.photo_extract_error = error instanceof Error ? error.message : 'Customer photo extraction failed.';
+  } finally {
+    driver.photo_extracting = false;
   }
 }
 
@@ -482,6 +633,7 @@ function submit() {
             <div><Label for="primary-full-name-ar">Arabic Name</Label><Input id="primary-full-name-ar" v-model="form.primary_driver.full_name_ar" dir="rtl" /><InputError :message="form.errors['primary_driver.full_name_ar']" class="mt-1" /></div>
             <div><Label for="primary-phone">Phone</Label><Input id="primary-phone" v-model="form.primary_driver.phone" /></div>
             <div><Label for="primary-nationality">Nationality</Label><Input id="primary-nationality" v-model="form.primary_driver.nationality" /></div>
+            <div><Label for="primary-place-of-issue">Place Of Issue</Label><Input id="primary-place-of-issue" v-model="form.primary_driver.place_of_issue" /><InputError :message="form.errors['primary_driver.place_of_issue']" class="mt-1" /></div>
             <div><Label for="primary-birth-date">Date Of Birth</Label><Input id="primary-birth-date" v-model="form.primary_driver.date_of_birth" type="date" /></div>
             <div><Label for="primary-identity-number">Identity Number</Label><Input id="primary-identity-number" v-model="form.primary_driver.identity_number" /></div>
             <div><Label for="primary-residency-number">Residency Number</Label><Input id="primary-residency-number" v-model="form.primary_driver.residency_number" /></div>
@@ -497,6 +649,23 @@ function submit() {
             <div>
               <Label class="mb-2 block">Document Back</Label>
               <FileUpload v-model="form.primary_driver.documents[1].temp_folders" :initial-files="form.primary_driver.documents[1].existing_files" :allowed-file-types="allowedFileTypes" :allow-multiple="false" :max-files="1" collection="contract_driver_back" theme="light" width="100%" @file-removed="(data: { type: string; fileId?: number }) => onDriverFileRemoved(form.primary_driver, 1, data)" />
+            </div>
+          </div>
+          <div class="space-y-3 rounded-md border bg-slate-50 p-4">
+            <div>
+              <Label class="mb-2 block">Customer Photo</Label>
+              <FileUpload v-model="form.primary_driver.customer_photo_temp_folders" :initial-files="form.primary_driver.customer_photo_existing_files" :allowed-file-types="allowedFileTypes" :allow-multiple="false" :max-files="1" collection="contract_customer_photo" theme="light" width="100%" @file-removed="(data: { type: string; fileId?: number }) => onDriverCustomerPhotoRemoved(form.primary_driver, data)" />
+              <InputError :message="form.errors['primary_driver.customer_photo_temp_folders']" class="mt-1" />
+            </div>
+            <div v-if="form.primary_driver.customer_photo_preview_url" class="max-w-[220px] overflow-hidden rounded-md border bg-white p-2">
+              <img :src="form.primary_driver.customer_photo_preview_url" alt="Customer photo preview" class="h-auto w-full rounded object-cover" />
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <Button type="button" variant="outline" :disabled="form.primary_driver.photo_extracting" @click="extractCustomerPhoto(form.primary_driver)">
+                {{ form.primary_driver.photo_extracting ? 'Extracting Photo...' : 'Extract Photo From Document' }}
+              </Button>
+              <p v-if="form.primary_driver.photo_extract_success" class="text-sm text-emerald-600">{{ form.primary_driver.photo_extract_success }}</p>
+              <p v-if="form.primary_driver.photo_extract_error" class="text-sm text-red-600">{{ form.primary_driver.photo_extract_error }}</p>
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-3">
@@ -547,6 +716,7 @@ function submit() {
               <div><Label :for="`driver-full-name-ar-${index}`">Arabic Name</Label><Input :id="`driver-full-name-ar-${index}`" v-model="driver.full_name_ar" dir="rtl" /><InputError :message="form.errors[`additional_drivers.${index}.full_name_ar`]" class="mt-1" /></div>
               <div><Label :for="`driver-phone-${index}`">Phone</Label><Input :id="`driver-phone-${index}`" v-model="driver.phone" /></div>
               <div><Label :for="`driver-nationality-${index}`">Nationality</Label><Input :id="`driver-nationality-${index}`" v-model="driver.nationality" /></div>
+              <div><Label :for="`driver-place-of-issue-${index}`">Place Of Issue</Label><Input :id="`driver-place-of-issue-${index}`" v-model="driver.place_of_issue" /><InputError :message="form.errors[`additional_drivers.${index}.place_of_issue`]" class="mt-1" /></div>
               <div><Label :for="`driver-birth-date-${index}`">Date Of Birth</Label><Input :id="`driver-birth-date-${index}`" v-model="driver.date_of_birth" type="date" /></div>
               <div><Label :for="`driver-identity-number-${index}`">Identity Number</Label><Input :id="`driver-identity-number-${index}`" v-model="driver.identity_number" /></div>
               <div><Label :for="`driver-residency-number-${index}`">Residency Number</Label><Input :id="`driver-residency-number-${index}`" v-model="driver.residency_number" /></div>
@@ -564,7 +734,7 @@ function submit() {
                 <FileUpload v-model="driver.documents[1].temp_folders" :initial-files="driver.documents[1].existing_files" :allowed-file-types="allowedFileTypes" :allow-multiple="false" :max-files="1" collection="contract_additional_driver_back" theme="light" width="100%" @file-removed="(data: { type: string; fileId?: number }) => onDriverFileRemoved(driver, 1, data)" />
               </div>
             </div>
-            <div class="flex flex-wrap items-center gap-3">
+          <div class="flex flex-wrap items-center gap-3">
               <Button type="button" variant="outline" :disabled="driver.extracting" @click="extractDriver(driver, 'additional', index)">
                 {{ driver.extracting ? 'Extracting...' : 'Extract From Document' }}
               </Button>
@@ -578,6 +748,60 @@ function submit() {
                 I reviewed the AI extracted data and confirm it is correct.
               </label>
               <InputError :message="form.errors[`additional_drivers.${index}.ai_reviewed`]" class="mt-1" />
+            </div>
+          </div>
+        </section>
+
+        <section class="space-y-4 rounded-lg border bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-semibold">Additional Archive</h2>
+              <p class="text-sm text-muted-foreground">Store extra customer documents here. Files already used in the main identity/license section above cannot be added again.</p>
+            </div>
+            <Button type="button" variant="outline" @click="addAdditionalArchiveItem">Add Archive File</Button>
+          </div>
+          <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Files already used in the main customer document section above cannot be added to this archive.
+          </div>
+          <div v-if="form.additional_archive.length === 0" class="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No additional archive files added.</div>
+          <div v-for="(item, index) in form.additional_archive" :key="item.id ?? `archive-${index}`" class="space-y-4 rounded-md border p-4">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <h3 class="font-semibold">Archive File {{ index + 1 }}</h3>
+                <p class="text-sm text-muted-foreground">Upload one additional customer document for archive only.</p>
+              </div>
+              <Button type="button" variant="ghost" @click="removeAdditionalArchiveItem(index)">Remove</Button>
+            </div>
+            <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <Label :for="`archive-document-type-${index}`">Document Type</Label>
+                <select :id="`archive-document-type-${index}`" v-model="item.document_type" class="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2">
+                  <option v-for="option in additionalArchiveDocumentTypeOptions" :key="`${index}-${option.value || 'empty'}`" :value="option.value">{{ option.label }}</option>
+                </select>
+                <InputError :message="form.errors[`additional_archive.${index}.document_type`]" class="mt-1" />
+              </div>
+              <div>
+                <Label :for="`archive-owner-${index}`">Belongs To</Label>
+                <select :id="`archive-owner-${index}`" v-model="item.owner_key" class="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2">
+                  <option v-for="option in additionalArchiveOwnerOptions" :key="`${index}-${option.value || 'none'}`" :value="option.value">{{ option.label }}</option>
+                </select>
+                <InputError :message="form.errors[`additional_archive.${index}.owner_key`]" class="mt-1" />
+              </div>
+              <div>
+                <Label :for="`archive-title-${index}`">Title</Label>
+                <Input :id="`archive-title-${index}`" v-model="item.title" />
+                <InputError :message="form.errors[`additional_archive.${index}.title`]" class="mt-1" />
+              </div>
+              <div>
+                <Label :for="`archive-notes-${index}`">Notes</Label>
+                <Input :id="`archive-notes-${index}`" v-model="item.notes" />
+                <InputError :message="form.errors[`additional_archive.${index}.notes`]" class="mt-1" />
+              </div>
+            </div>
+            <div>
+              <Label class="mb-2 block">Archive File</Label>
+              <FileUpload v-model="item.temp_folders" :initial-files="item.existing_files || []" :allowed-file-types="allowedFileTypes" :allow-multiple="false" :max-files="1" collection="contract_additional_archive" theme="light" width="100%" @file-removed="(data: { type: string; fileId?: number }) => onAdditionalArchiveFileRemoved(index, data)" />
+              <InputError :message="form.errors[`additional_archive.${index}.temp_folders`]" class="mt-1" />
             </div>
           </div>
         </section>
@@ -778,3 +1002,22 @@ function submit() {
     </main>
   </AdminLayout>
 </template>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

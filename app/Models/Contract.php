@@ -73,6 +73,11 @@ class Contract extends Model
         return $this->hasMany(ContractDriver::class)->where('role', 'additional');
     }
 
+    public function archiveFiles(): HasMany
+    {
+        return $this->hasMany(ContractArchiveFile::class);
+    }
+
     public function damageReports(): HasMany
     {
         return $this->hasMany(CarDamageReport::class);

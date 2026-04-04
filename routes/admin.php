@@ -76,6 +76,9 @@ Route::middleware(['auth', 'tenant_verified', 'active', 'admin', 'tenant.subscri
         Route::post('contracts/drivers/extract', [ContractsController::class, 'extractDriverDocument'])
             ->middleware('permission:tenant-manage-reservations')
             ->name('contracts.drivers.extract');
+        Route::post('contracts/drivers/photo/extract', [ContractsController::class, 'extractDriverCustomerPhoto'])
+            ->middleware('permission:tenant-manage-reservations')
+            ->name('contracts.drivers.photo.extract');
         Route::get('contracts/{contract}/pdf', [ContractsController::class, 'pdf'])
             ->middleware('permission:tenant-manage-reservations')
             ->name('contracts.pdf');
@@ -154,6 +157,9 @@ Route::middleware(['auth', 'tenant_verified', 'active', 'admin', 'tenant.subscri
             ->name('support.platform.close');
 
         // Branches
+        Route::get('branches/location-options/cities', [BranchesController::class, 'cities'])
+            ->middleware('permission:tenant-manage-branches')
+            ->name('branches.cities');
         Route::resource('branches', BranchesController::class)
             ->except(['show'])
             ->middleware('permission:tenant-manage-branches');
@@ -206,5 +212,7 @@ Route::middleware(['auth', 'tenant_verified', 'active', 'admin', 'tenant.subscri
             ->name('settings.stripe-connect.login-link');
 
     });
+
+
 
 
